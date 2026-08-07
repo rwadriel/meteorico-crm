@@ -20,6 +20,7 @@
     "db:generate": "pnpm --filter @meteorico/database run generate",
     "db:migrate": "pnpm --filter @meteorico/database run migrate",
     "db:push": "pnpm --filter @meteorico/database run push",
+    "db:seed": "pnpm --filter @meteorico/database run seed",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:config": "docker compose config"

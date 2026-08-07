@@ -1,9 +1,13 @@
+import './types.js';
 import Fastify, { type FastifyInstance, type FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import cookie from '@fastify/cookie';
+import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import { healthRoutes } from './routes/health.js';
+import { authRoutes } from './routes/auth.js';
 import { createLogger } from './logger.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -21,11 +25,19 @@ export async function buildApp(): Promise<FastifyInstance> {
     contentSecurityPolicy: false,
   });
 
+  await app.register(cookie);
+
+  await app.register(rateLimit, {
+    global: true,
+    max: 100,
+    timeWindow: '1 minute',
+  });
+
   await app.register(swagger, {
     openapi: {
       info: {
         title: 'Meteorico CRM API',
-        version: '0.1.0',
+        version: '0.2.0',
         description: 'API do sistema Meteorico CRM',
       },
     },
@@ -36,6 +48,15 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await app.register(healthRoutes);
+
+  await app.register(authRoutes, {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '15 minutes',
+      },
+    },
+  });
 
   app.setErrorHandler((error: FastifyError, _request, reply) => {
     app.log.error(error, 'Unhandled error');
