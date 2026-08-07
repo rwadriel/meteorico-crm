@@ -4,7 +4,7 @@ Ultima atualizacao: 2026-08-07
 
 ## Etapa atual
 
-**Etapa 02 - Banco, campanhas, autenticacao e auditoria** (CONCLUIDA)
+**Etapa 03 - Design system e painel administrativo base** (CONCLUIDA)
 
 ## O que esta pronto
 
@@ -32,12 +32,30 @@ Ultima atualizacao: 2026-08-07
 - [x] Cascade deletes em sessoes
 - [x] Testes de integracao com PostgreSQL real
 
+### Etapa 03 - Design System e Painel Admin
+- [x] Design system CSS completo (dark theme, lime-green #84cc16 accents)
+- [x] Design tokens (cores, tipografia, espacamento, sombras, z-index)
+- [x] Componentes UI: Button, Input, Modal, Table, Badge, Skeleton, EmptyState, ConfirmDialog, Alert
+- [x] AuthContext com login/logout via cookie
+- [x] Hooks usePermission e useCanAccess (RBAC frontend)
+- [x] ProtectedRoute com redirect para login
+- [x] AdminLayout com sidebar, topbar, breadcrumbs
+- [x] Sidebar com navegacao por secao e controle de permissao
+- [x] Pagina de Login completa com tratamento de erro
+- [x] Dashboard com cards de estatisticas
+- [x] Placeholder pages: Campanhas, Grupos, Contatos, Mensagens, Fluxos, IA, Integracoes, Importacoes, Auditoria, Configuracoes
+- [x] Router com rotas protegidas e redirect
+- [x] Responsivo (mobile sidebar overlay, breakpoints 1024px e 640px)
+- [x] Acessibilidade: focus-visible, aria-labels, role attributes, prefers-reduced-motion
+- [x] Testes de componentes (16 testes web)
+
 ## O que foi testado
 
-- [x] 71 testes passam (12 test files)
+- [x] 86 testes passam (14 test files)
 - [x] 8 testes de constraints do banco (PostgreSQL real)
 - [x] 8 testes de auth (login, logout, sessao, auditoria)
 - [x] 3 testes de RBAC (owner, read_only, sessoes)
+- [x] 16 testes de componentes web (Button, Input, Badge, Alert, EmptyState, Skeleton, App, Login)
 - [x] Lint: 0 errors, 0 warnings
 - [x] Typecheck: 7/7 packages passam
 - [x] Build: 7/7 packages compilam
@@ -65,6 +83,10 @@ Ultima atualizacao: 2026-08-07
 | Hashing de senha               | Argon2id            | -             |
 | Sessoes                        | Cookie httpOnly     | -             |
 | RBAC                           | Permissoes granulares| -            |
+| Design system                  | CSS puro + tokens   | -             |
+| Roteamento                     | React Router v7     | -             |
+| Icones                         | Lucide React        | -             |
+| Testes componentes             | Testing Library     | -             |
 
 ## Migrations aplicadas
 
@@ -107,9 +129,9 @@ Ultima atualizacao: 2026-08-07
 
 ## Proximo passo
 
-**Etapa 03 - API CRUD e logica de negocio**
+**Etapa 04 - API CRUD e logica de negocio**
 
-A Etapa 03 incluira:
+A Etapa 04 incluira:
 - CRUD de campanhas, contatos, grupos
 - Logica de classificacao integrada
 - Endpoints de participacoes
