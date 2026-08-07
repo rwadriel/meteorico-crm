@@ -1,0 +1,11 @@
+{
+  "name": "crm-grupos",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "CRM de leads alimentado pelo feed do WhatsApp Manager",
+  "scripts": {
+    "coletar": "node index.js",
+    "painel": "node painel.js"
+  }
+}

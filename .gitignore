@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.turbo/
+
+# Coverage
+coverage/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# WhatsApp patterns (from other projects)
+.wwebjs_auth/
+data/
+logs/
+exports/
+
+# SQLite dev files
+prisma/*.db
+prisma/*.db-journal
+
+# Misc
+*.tsbuildinfo
