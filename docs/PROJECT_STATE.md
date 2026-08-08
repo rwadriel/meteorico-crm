@@ -4,7 +4,7 @@ Ultima atualizacao: 2026-08-08
 
 ## Etapa atual
 
-**Etapa 05 - Consumidor da API de grupos e reconciliacao** (CONCLUIDA)
+**Etapa 06 - Conversa privada, redirecionador e atribuicao** (CONCLUIDA)
 
 ## O que esta pronto
 
@@ -108,9 +108,31 @@ Ultima atualizacao: 2026-08-08
 - [x] Nenhum dado pessoal real em testes (phones ficticios 5511999990001+)
 - [x] Token nunca logado nem exposto
 
+### Etapa 06 - Conversa Privada, Redirecionador e Atribuicao
+- [x] Interface MessagingProvider com capacidades declaradas (send, receive, interactive, status)
+- [x] MockMessagingProvider com fallback numerado para botoes interativos
+- [x] createNumberedFallback para provedores sem suporte a botoes
+- [x] Modelo RedirectLink: codigo aleatorio alta entropia, expiracao, uso controlado
+- [x] Allowlist de destinos (wa.me, api.whatsapp.com, chat.whatsapp.com)
+- [x] Endpoint GET /r/:code com validacao de formato, rate limit 30/min
+- [x] TrackingClick registrado em cada clique
+- [x] Contagem de uso e verificacao de maxUses/expiresAt
+- [x] Modelo ConversationMessage com externalMessageId (unique), provider, deliveryStatus
+- [x] Modelo ContactPreference: opt-out/opt-in por canal
+- [x] Webhook POST /webhook/messaging: recebe mensagem e status
+- [x] Idempotencia de webhook por externalMessageId
+- [x] handleIncomingMessage: upsert contato, create/reuse conversation, atribuicao por referral
+- [x] handleDeliveryStatus: atualiza deliveredAt/readAt
+- [x] sendMessage: verifica opt-out, formata interactive, registra mensagem outbound
+- [x] attributeConversation: cria participacao e LeadAttribution
+- [x] Opt-out e opt-in endpoints com audit log
+- [x] CRUD redirect links com RBAC e audit logging
+- [x] Frontend MessagesPage: CRUD de redirect links, visualizacao de campanhas
+- [x] Testes integracao: 13 testes (create link, disallowed destination, resolve+track, expired, max uses, invalid code, webhook message, webhook idempotent, delivery status, opt-out, deactivate, list filter, auth)
+
 ## O que foi testado
 
-- [x] 114 testes passam (76 API + 22 worker + 16 web)
+- [x] 127 testes passam (89 API + 22 worker + 16 web)
 - [x] 8 testes de constraints do banco (PostgreSQL real)
 - [x] 8 testes de auth (login, logout, sessao, auditoria)
 - [x] 3 testes de RBAC (owner, read_only, sessoes)
@@ -122,6 +144,7 @@ Ultima atualizacao: 2026-08-08
 - [x] 9 testes do WhatsApp Manager adapter (endpoints, auth, HTTP errors, defaults)
 - [x] 12 testes do event processor (entry, exit, re-entry, idempotency, multi-participant, null number, unknown group, non-membership, batch, adicionado/removido, name update)
 - [x] 6 testes de integration health API (health empty, health with data, dead-letter, orphan groups, assign, auth)
+- [x] 13 testes de messaging (redirect CRUD, resolve+track, expired, max uses, invalid code, webhook message, webhook idempotent, delivery status, opt-out, deactivate, list, auth)
 - [x] 1 teste de health do worker
 - [x] 16 testes de componentes web (Button, Input, Badge, Alert, EmptyState, Skeleton, App, Login)
 - [x] Lint: 0 errors, 0 warnings
@@ -159,6 +182,8 @@ Ultima atualizacao: 2026-08-08
 | File upload                    | @fastify/multipart  | -             |
 | Edition numbers                | Referencia historica, nao UUID | - |
 | Testes sequenciais             | workspace-concurrency=1 | -        |
+| Redirect links                 | Allowlist + codigo aleatorio | -  |
+| MessagingProvider              | Interface + mock + fallback | -   |
 
 ## Migrations aplicadas
 
@@ -172,7 +197,7 @@ Ultima atualizacao: 2026-08-08
 | Integracao            | Status                | Notas                      |
 |-----------------------|-----------------------|----------------------------|
 | WhatsApp Manager API  | Implementada (Etapa 05) | Adapter, polling, reconciliacao |
-| WhatsApp Messaging    | Interface pendente     | Provedor nao definido      |
+| WhatsApp Messaging    | Interface + mock (Etapa 06) | Provedor real pendente |
 | Eduzz                 | Interface pendente     | Contrato pendente          |
 | xAI/Grok              | Interface pendente     | API key pendente           |
 | Meta Marketing API    | Nao iniciada           | Conta Business pendente    |

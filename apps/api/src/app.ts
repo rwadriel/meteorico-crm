@@ -13,6 +13,9 @@ import { campaignRoutes } from './routes/campaigns.js';
 import { groupRoutes } from './routes/groups.js';
 import { importRoutes } from './routes/imports.js';
 import { integrationRoutes } from './routes/integration.js';
+import { redirectRoutes } from './routes/redirect.js';
+import { webhookRoutes } from './routes/webhook.js';
+import { messagingRoutes } from './routes/messaging.js';
 import { createLogger } from './logger.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -73,6 +76,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(groupRoutes, { prefix: '/api' });
   await app.register(importRoutes, { prefix: '/api' });
   await app.register(integrationRoutes, { prefix: '/api' });
+  await app.register(messagingRoutes, { prefix: '/api' });
+  await app.register(redirectRoutes);
+  await app.register(webhookRoutes);
 
   app.setErrorHandler((error: FastifyError, _request, reply) => {
     app.log.error(error, 'Unhandled error');
