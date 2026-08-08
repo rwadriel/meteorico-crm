@@ -4,7 +4,7 @@ Ultima atualizacao: 2026-08-08
 
 ## Etapa atual
 
-**Etapa 09 - Dashboards, Eduzz, trafego e relatorios** (CONCLUIDA)
+**Etapa 10 - Auditoria final, seguranca e EasyPanel** (CONCLUIDA)
 
 ## O que esta pronto
 
@@ -212,7 +212,7 @@ Ultima atualizacao: 2026-08-08
 
 ## O que foi testado
 
-- [x] 177 testes de apps passam (139 API + 22 worker + 16 web)
+- [x] 190 testes de apps passam (152 API + 22 worker + 16 web)
 - [x] 8 testes de constraints do banco (PostgreSQL real)
 - [x] 8 testes de auth (login, logout, sessao, auditoria)
 - [x] 3 testes de RBAC (owner, read_only, sessoes)
@@ -228,6 +228,7 @@ Ultima atualizacao: 2026-08-08
 - [x] 13 testes de classificacao (novo, reparticipante, veterano, aluno, blocked, existing, simulate, override, group alloc, full group, all full, invalid override, auth)
 - [x] 23 testes de flows/AI (variaveis, render, template CRUD, preview, flow CRUD, publish, buttons, loops, empty flow, knowledge CRUD, prohibited content, diagnosis 3+, diagnosis mock, playground, playground reject, handoff, auth, variable extraction, flow versions)
 - [x] 14 testes de analytics/Eduzz (dashboard vazio, dashboard com dados, campaign dashboard, group dashboard, contact timeline, comparacao, export CSV, metricas, Eduzz purchase+refund, idempotencia, receita liquida, filtro de data, auth, multi-campanha)
+- [x] 13 testes E2E (new lead, reparticipante, diagnosis 3+, aluno flow, repeated click, full group, idempotent Eduzz, AI diagnosis, opt-out, purchase+refund dashboard, read-only blocked, malicious CSV, invalid redirect)
 - [x] 1 teste de health do worker
 - [x] 16 testes de componentes web (Button, Input, Badge, Alert, EmptyState, Skeleton, App, Login)
 - [x] Lint: 0 errors, 0 warnings
@@ -318,6 +319,17 @@ Ultima atualizacao: 2026-08-08
 | Conta Meta Business Manager            | Baixa      | Etapa 07        |
 | API key xAI/Grok                       | Baixa      | Etapa 07        |
 
+### Etapa 10 - Auditoria Final, Seguranca e EasyPanel
+- [x] 13 cenarios E2E end-to-end (fluxo completo do contato)
+- [x] Documentacao de variaveis de ambiente (ENVIRONMENT_VARIABLES.md)
+- [x] Guia de deploy EasyPanel (EASYPANEL_DEPLOY.md)
+- [x] Runbook de incidentes (RUNBOOK.md)
+- [x] Checklist de go-live (GO_LIVE_CHECKLIST.md)
+- [x] Manual de operacao semanal (OPERACAO_SEMANAL.md)
+- [x] Scan de segredos: 0 encontrados
+- [x] Auditoria de seguranca: sem vulnerabilidades criticas
+- [x] Todas as 10 etapas concluidas
+
 ## Proximo passo
 
-**Etapa 10** - A ser lida do kit
+**Merge para main** - Requer aprovacao humana explicita. Criar PR de phase/10-release para main.
