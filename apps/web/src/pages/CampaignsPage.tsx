@@ -26,7 +26,9 @@ interface Campaign {
   slug: string;
   editionNumber: number | null;
   status: string;
+  timezone: string;
   cartOpenDay: string;
+  captationStartsAt: string | null;
   startsAt: string | null;
   endsAt: string | null;
   createdAt: string;
@@ -57,6 +59,8 @@ export function CampaignsPage() {
   const [formSlug, setFormSlug] = useState('');
   const [formEdition, setFormEdition] = useState('');
   const [formCartDay, setFormCartDay] = useState('wednesday');
+  const [formTimezone, setFormTimezone] = useState('America/Sao_Paulo');
+  const [formCaptationStartsAt, setFormCaptationStartsAt] = useState('');
   const [formStartsAt, setFormStartsAt] = useState('');
   const [formEndsAt, setFormEndsAt] = useState('');
   const [formLoading, setFormLoading] = useState(false);
@@ -92,9 +96,11 @@ export function CampaignsPage() {
       const body: Record<string, unknown> = {
         name: formName,
         slug: formSlug || toSlug(formName),
+        timezone: formTimezone,
         cartOpenDay: formCartDay,
       };
       if (formEdition) body.editionNumber = parseInt(formEdition, 10);
+      if (formCaptationStartsAt) body.captationStartsAt = new Date(formCaptationStartsAt).toISOString();
       if (formStartsAt) body.startsAt = new Date(formStartsAt).toISOString();
       if (formEndsAt) body.endsAt = new Date(formEndsAt).toISOString();
 
@@ -123,6 +129,8 @@ export function CampaignsPage() {
     setFormSlug('');
     setFormEdition('');
     setFormCartDay('wednesday');
+    setFormTimezone('America/Sao_Paulo');
+    setFormCaptationStartsAt('');
     setFormStartsAt('');
     setFormEndsAt('');
     setFormError('');
@@ -199,8 +207,13 @@ export function CampaignsPage() {
       ),
     },
     {
+      key: 'captationStartsAt',
+      header: 'Captacao',
+      render: (c: Campaign) => c.captationStartsAt ? new Date(c.captationStartsAt).toLocaleDateString('pt-BR') : '-',
+    },
+    {
       key: 'startsAt',
-      header: 'Inicio',
+      header: 'Abertura',
       render: (c: Campaign) => c.startsAt ? new Date(c.startsAt).toLocaleDateString('pt-BR') : '-',
     },
     {
@@ -327,8 +340,10 @@ export function CampaignsPage() {
             <option value="sunday">Domingo</option>
           </select>
         </div>
-        <Input label="Data de inicio" type="datetime-local" value={formStartsAt} onChange={(e) => setFormStartsAt(e.target.value)} />
-        <Input label="Data de fim" type="datetime-local" value={formEndsAt} onChange={(e) => setFormEndsAt(e.target.value)} />
+        <Input label="Timezone" value={formTimezone} onChange={(e) => setFormTimezone(e.target.value)} />
+        <Input label="Inicio da captacao" type="datetime-local" value={formCaptationStartsAt} onChange={(e) => setFormCaptationStartsAt(e.target.value)} />
+        <Input label="Abertura do carrinho" type="datetime-local" value={formStartsAt} onChange={(e) => setFormStartsAt(e.target.value)} />
+        <Input label="Encerramento" type="datetime-local" value={formEndsAt} onChange={(e) => setFormEndsAt(e.target.value)} />
       </Modal>
 
       <ConfirmDialog

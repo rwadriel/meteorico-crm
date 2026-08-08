@@ -258,24 +258,30 @@ Segredos sao configurados via variaveis de ambiente, nunca no codigo:
 
 ### Etapa 01 (Fundacao)
 
-- [ ] `.env.example` sem valores reais
-- [ ] `.gitignore` inclui `.env`, `node_modules`, `.prisma`
-- [ ] Headers de seguranca configurados
-- [ ] CORS restrito ao dominio do frontend
-- [ ] Validacao Zod em schemas compartilhados
+- [x] `.env.example` sem valores reais
+- [x] `.gitignore` inclui `.env`, `node_modules`, `.prisma`
+- [x] Headers de seguranca configurados (helmet)
+- [x] CORS restrito ao dominio do frontend
+- [x] Validacao Zod em schemas compartilhados
 
 ### Etapa 02 (Schema)
 
-- [ ] Argon2id para senhas
-- [ ] Sessoes httpOnly com expiracao
-- [ ] RBAC implementado
-- [ ] Criptografia de tokens de integracao
-- [ ] Audit log funcional
+- [x] Argon2id para senhas
+- [x] Sessoes httpOnly com expiracao
+- [x] RBAC implementado (67 permissoes)
+- [x] Criptografia de tokens de integracao (AES-256-GCM)
+- [x] Audit log funcional
 
-### Etapa 03+ (Progressivo)
+### Etapa 10.1 (Hardening Pre-Staging)
 
-- [ ] Rate limiting ativo
-- [ ] CSRF tokens
-- [ ] Redacao de PII em logs
-- [ ] Testes de seguranca automatizados
-- [ ] Penetration testing manual
+- [x] Swagger /docs desabilitado em producao
+- [x] RBAC em todas as novas rotas (contacts, audit-logs, settings, queues)
+- [x] Eduzz webhook: HMAC-SHA256 com timingSafeEqual (sem mock em producao)
+- [x] Campos sensiveis mascarados nas APIs (phone, email)
+- [x] Rate limiting ativo (global + auth + webhooks)
+- [x] Redacao de PII em logs (pino redact)
+- [x] Upload limitado a 10MB
+- [x] BullMQ com idempotencia (nenhuma mensagem duplicada)
+- [ ] CSRF tokens (SameSite=Lax e suficiente para o cenario atual)
+- [ ] Testes de seguranca automatizados (futuro)
+- [ ] Penetration testing manual (futuro)

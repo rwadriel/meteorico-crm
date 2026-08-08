@@ -26,7 +26,9 @@
 - Dominio: api.meteorico.seudominio.com
 - Variaveis (secrets):
   - DATABASE_URL=postgresql://meteorico:(senha)@postgres:5432/meteorico_crm
-  - SESSION_SECRET=(gerar)
+  - REDIS_URL=redis://redis:6379
+  - SESSION_SECRET=(gerar com `openssl rand -hex 32`)
+  - EDUZZ_WEBHOOK_SECRET=(gerar com `openssl rand -hex 32`)
   - API_PORT=4080
   - API_CORS_ORIGINS=https://app.meteorico.seudominio.com
   - NODE_ENV=production
@@ -39,6 +41,7 @@
 - Sem dominio publico (interno)
 - Variaveis (secrets):
   - DATABASE_URL=postgresql://meteorico:(senha)@postgres:5432/meteorico_crm
+  - REDIS_URL=redis://redis:6379
   - WORKER_PORT=4081
   - WHATSAPP_MANAGER_URL=(url)
   - WHATSAPP_MANAGER_INTEGRATION_TOKEN=(token)

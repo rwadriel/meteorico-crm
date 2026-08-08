@@ -24,7 +24,13 @@ import { diagnosisRoutes } from './routes/diagnosis.js';
 import { handoffRoutes } from './routes/handoff.js';
 import { analyticsRoutes } from './routes/analytics.js';
 import { eduzzWebhookRoutes } from './routes/eduzz-webhook.js';
+import { queueRoutes } from './routes/queues.js';
+import { contactRoutes } from './routes/contacts.js';
+import { auditRoutes } from './routes/audit-logs.js';
+import { settingsRoutes } from './routes/settings.js';
 import { createLogger } from './logger.js';
+
+const isProduction = (process.env.NODE_ENV ?? 'development') === 'production';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -49,19 +55,21 @@ export async function buildApp(): Promise<FastifyInstance> {
     timeWindow: '1 minute',
   });
 
-  await app.register(swagger, {
-    openapi: {
-      info: {
-        title: 'Meteorico CRM API',
-        version: '0.2.0',
-        description: 'API do sistema Meteorico CRM',
+  if (!isProduction) {
+    await app.register(swagger, {
+      openapi: {
+        info: {
+          title: 'Meteorico CRM API',
+          version: '0.3.0',
+          description: 'API do sistema Meteorico CRM',
+        },
       },
-    },
-  });
+    });
 
-  await app.register(swaggerUi, {
-    routePrefix: '/docs',
-  });
+    await app.register(swaggerUi, {
+      routePrefix: '/docs',
+    });
+  }
 
   await app.register(multipart, {
     limits: {
@@ -82,6 +90,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(campaignRoutes, { prefix: '/api' });
   await app.register(groupRoutes, { prefix: '/api' });
+  await app.register(contactRoutes, { prefix: '/api' });
   await app.register(importRoutes, { prefix: '/api' });
   await app.register(integrationRoutes, { prefix: '/api' });
   await app.register(messagingRoutes, { prefix: '/api' });
@@ -92,6 +101,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(diagnosisRoutes, { prefix: '/api' });
   await app.register(handoffRoutes, { prefix: '/api' });
   await app.register(analyticsRoutes, { prefix: '/api' });
+  await app.register(queueRoutes, { prefix: '/api' });
+  await app.register(auditRoutes, { prefix: '/api' });
+  await app.register(settingsRoutes, { prefix: '/api' });
   await app.register(redirectRoutes);
   await app.register(webhookRoutes);
   await app.register(eduzzWebhookRoutes);

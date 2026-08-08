@@ -6,6 +6,13 @@ export interface AttributionData {
   medium: string;
   campaignRef: string;
   landingUrl: string;
+  metaCampaignId?: string;
+  metaAdsetId?: string;
+  metaAdId?: string;
+  creativeId?: string;
+  placement?: string;
+  trackingCode?: string;
+  clickedAt?: Date;
   confidence: 'high' | 'medium' | 'low';
 }
 
@@ -214,6 +221,14 @@ export async function attributeConversation(
       medium: attribution.medium,
       campaignRef: attribution.campaignRef,
       landingUrl: attribution.landingUrl,
+      metaCampaignId: attribution.metaCampaignId ?? null,
+      metaAdsetId: attribution.metaAdsetId ?? null,
+      metaAdId: attribution.metaAdId ?? null,
+      creativeId: attribution.creativeId ?? null,
+      placement: attribution.placement ?? null,
+      trackingCode: attribution.trackingCode ?? null,
+      clickedAt: attribution.clickedAt ?? null,
+      confidence: attribution.confidence,
     },
   });
 

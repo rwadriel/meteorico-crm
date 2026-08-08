@@ -4,6 +4,11 @@ import { createProvider } from './adapters/whatsapp-manager.js';
 import { processEventBatch } from './processors/group-events.js';
 import { reconcileSnapshots } from './processors/snapshot-reconciliation.js';
 import { startHealthServer } from './health.js';
+import {
+  startOutboundMessageWorker,
+  startIntegrationTaskWorker,
+  closeRedisConnection,
+} from './queues/index.js';
 
 const logger = createWorkerLogger();
 
@@ -95,6 +100,9 @@ async function start(): Promise<void> {
 
   startHealthServer();
 
+  const outboundWorker = startOutboundMessageWorker();
+  const integrationWorker = startIntegrationTaskWorker();
+
   const pollingTimer = setInterval(async () => {
     try {
       await pollEvents();
@@ -126,6 +134,9 @@ async function start(): Promise<void> {
     logger.info({ signal }, 'Worker shutting down');
     clearInterval(pollingTimer);
     clearInterval(reconciliationTimer);
+    await outboundWorker.close();
+    await integrationWorker.close();
+    await closeRedisConnection();
     await disconnect();
     process.exit(0);
   };

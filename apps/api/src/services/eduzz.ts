@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@meteorico/database';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export interface EduzzWebhookPayload {
   event: string;
@@ -22,12 +23,46 @@ export interface EduzzProvider {
   verifySignature(payload: unknown, signature: string): boolean;
 }
 
+export class HmacEduzzProvider implements EduzzProvider {
+  name = 'eduzz';
+  private secret: string;
+
+  constructor(secret: string) {
+    this.secret = secret;
+  }
+
+  verifySignature(payload: unknown, signature: string): boolean {
+    const body = typeof payload === 'string' ? payload : JSON.stringify(payload);
+    const expected = createHmac('sha256', this.secret).update(body).digest('hex');
+    try {
+      return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+    } catch {
+      return false;
+    }
+  }
+}
+
 export class MockEduzzProvider implements EduzzProvider {
   name = 'eduzz-mock';
 
   verifySignature(_payload: unknown, _signature: string): boolean {
     return true;
   }
+}
+
+export function createEduzzProvider(): EduzzProvider {
+  const env = process.env.NODE_ENV ?? 'development';
+  const secret = process.env.EDUZZ_WEBHOOK_SECRET;
+
+  if (env === 'test') {
+    return new MockEduzzProvider();
+  }
+
+  if (!secret) {
+    throw new Error('EDUZZ_WEBHOOK_SECRET is required in non-test environments');
+  }
+
+  return new HmacEduzzProvider(secret);
 }
 
 export async function handleEduzzWebhook(
@@ -63,10 +98,16 @@ export async function handleEduzzWebhook(
       data: {
         phone,
         normalizedPhone: phone,
+        email: payload.data.buyer_email || null,
         name: '',
         firstSeenAt: new Date(),
         lastSeenAt: new Date(),
       },
+    });
+  } else if (contact && payload.data.buyer_email && !contact.email) {
+    await db.contact.update({
+      where: { id: contact.id },
+      data: { email: payload.data.buyer_email },
     });
   }
 

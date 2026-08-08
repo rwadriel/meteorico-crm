@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { getClient } from '@meteorico/database';
-import { handleEduzzWebhook, MockEduzzProvider } from '../services/eduzz.js';
+import { handleEduzzWebhook, createEduzzProvider } from '../services/eduzz.js';
 import type { EduzzWebhookPayload } from '../services/eduzz.js';
 
 export async function eduzzWebhookRoutes(app: FastifyInstance) {
@@ -13,7 +13,15 @@ export async function eduzzWebhookRoutes(app: FastifyInstance) {
     },
   }, async (request, reply) => {
     const db = getClient();
-    const provider = new MockEduzzProvider();
+
+    let provider;
+    try {
+      provider = createEduzzProvider();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Provider unavailable';
+      request.log.error({ err: message }, 'Eduzz provider not configured');
+      return reply.status(503).send({ error: 'Webhook provider not configured' });
+    }
 
     try {
       const result = await handleEduzzWebhook(db, provider, request.body);

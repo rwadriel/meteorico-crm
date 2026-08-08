@@ -64,7 +64,9 @@ export async function createCampaign(
     slug: string;
     editionNumber?: number | null;
     status?: string;
+    timezone?: string;
     cartOpenDay?: string;
+    captationStartsAt?: Date | null;
     startsAt?: Date | null;
     endsAt?: Date | null;
   },
@@ -76,7 +78,9 @@ export async function createCampaign(
       slug: data.slug,
       editionNumber: data.editionNumber ?? null,
       status: data.status ?? 'draft',
+      timezone: data.timezone ?? 'America/Sao_Paulo',
       cartOpenDay: data.cartOpenDay ?? 'wednesday',
+      captationStartsAt: data.captationStartsAt ?? null,
       startsAt: data.startsAt ?? null,
       endsAt: data.endsAt ?? null,
       createdBy: userId,
@@ -141,12 +145,18 @@ export async function duplicateCampaign(
       ? `${original.slug}-ed${newEditionNumber}`
       : `${original.slug}-copy`);
 
+  const offsetMs = 7 * 24 * 60 * 60 * 1000;
+
+  const captationStartsAt = original.captationStartsAt
+    ? new Date(original.captationStartsAt.getTime() + offsetMs)
+    : null;
+
   const startsAt = original.startsAt
-    ? new Date(original.startsAt.getTime() + 7 * 24 * 60 * 60 * 1000)
+    ? new Date(original.startsAt.getTime() + offsetMs)
     : null;
 
   const endsAt = original.endsAt
-    ? new Date(original.endsAt.getTime() + 7 * 24 * 60 * 60 * 1000)
+    ? new Date(original.endsAt.getTime() + offsetMs)
     : null;
 
   return db.$transaction(async (tx) => {
@@ -156,7 +166,9 @@ export async function duplicateCampaign(
         slug,
         editionNumber: newEditionNumber ?? null,
         status: 'draft',
+        timezone: original.timezone,
         cartOpenDay: (overrides.cartOpenDay as string) ?? original.cartOpenDay,
+        captationStartsAt: (overrides.captationStartsAt as Date) ?? captationStartsAt,
         startsAt: (overrides.startsAt as Date) ?? startsAt,
         endsAt: (overrides.endsAt as Date) ?? endsAt,
         createdBy: userId,

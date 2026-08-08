@@ -84,6 +84,7 @@ model Session {
 model Contact {
   id                 String    @id @default(uuid())
   phone              String?   @unique
+  email              String?
   name               String    @default("")
   normalizedPhone    String?   @map("normalized_phone")
   firstSeenAt        DateTime  @default(now()) @map("first_seen_at")
@@ -107,6 +108,7 @@ model Contact {
   preferences    ContactPreference[]
 
   @@index([normalizedPhone])
+  @@index([email])
   @@map("contacts")
 }
 
@@ -127,17 +129,19 @@ model ContactIdentifier {
 // ─── Campaigns ───────────────────────────────────────────────────────
 
 model Campaign {
-  id            String    @id @default(uuid())
-  name          String
-  slug          String    @unique
-  editionNumber Int?      @unique @map("edition_number")
-  status        String    @default("draft")
-  cartOpenDay   String    @default("wednesday") @map("cart_open_day")
-  startsAt      DateTime? @map("starts_at")
-  endsAt        DateTime? @map("ends_at")
-  createdBy     String    @map("created_by")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  id                 String    @id @default(uuid())
+  name               String
+  slug               String    @unique
+  editionNumber      Int?      @unique @map("edition_number")
+  status             String    @default("draft")
+  timezone           String    @default("America/Sao_Paulo")
+  cartOpenDay        String    @default("wednesday") @map("cart_open_day")
+  captationStartsAt  DateTime? @map("captation_starts_at")
+  startsAt           DateTime? @map("starts_at")
+  endsAt             DateTime? @map("ends_at")
+  createdBy          String    @map("created_by")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   creator        AdminUser @relation(fields: [createdBy], references: [id])
   versions       CampaignVersion[]
@@ -273,16 +277,26 @@ model ProcessedEvent {
 // ─── Attribution & Tracking ──────────────────────────────────────────
 
 model LeadAttribution {
-  id              String   @id @default(uuid())
-  participationId String   @map("participation_id")
+  id              String    @id @default(uuid())
+  participationId String    @map("participation_id")
   source          String
-  medium          String   @default("")
-  campaignRef     String   @default("") @map("campaign_ref")
-  landingUrl      String   @default("") @map("landing_url")
-  createdAt       DateTime @default(now()) @map("created_at")
+  medium          String    @default("")
+  campaignRef     String    @default("") @map("campaign_ref")
+  landingUrl      String    @default("") @map("landing_url")
+  metaCampaignId  String?   @map("meta_campaign_id")
+  metaAdsetId     String?   @map("meta_adset_id")
+  metaAdId        String?   @map("meta_ad_id")
+  creativeId      String?   @map("creative_id")
+  placement       String?
+  trackingCode    String?   @map("tracking_code")
+  clickedAt       DateTime? @map("clicked_at")
+  confidence      String    @default("medium")
+  createdAt       DateTime  @default(now()) @map("created_at")
 
   participation CampaignParticipation @relation(fields: [participationId], references: [id], onDelete: Cascade)
 
+  @@index([metaCampaignId])
+  @@index([trackingCode])
   @@map("lead_attributions")
 }
 

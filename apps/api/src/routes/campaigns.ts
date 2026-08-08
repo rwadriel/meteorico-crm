@@ -53,6 +53,7 @@ export async function campaignRoutes(app: FastifyInstance) {
     try {
       const campaign = await createCampaign(db, {
         ...data,
+        captationStartsAt: data.captationStartsAt ? new Date(data.captationStartsAt) : null,
         startsAt: data.startsAt ? new Date(data.startsAt) : null,
         endsAt: data.endsAt ? new Date(data.endsAt) : null,
       }, request.user!.id);

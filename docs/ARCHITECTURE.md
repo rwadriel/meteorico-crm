@@ -201,16 +201,50 @@ Cache e mensageria.
 - **Pub/Sub**: Notificacoes em tempo real para WebSocket
 - **Rate limiting**: Contadores de requisicoes
 
-### Filas BullMQ
+### Filas BullMQ (implementadas)
+
+| Fila                    | Descricao                              | Retry | Concorrencia | Rate Limit |
+|-------------------------|----------------------------------------|-------|--------------|------------|
+| outbound-messages       | Envio de mensagens WhatsApp            | 5x exponencial (2s base) | 5 | 30/s |
+| integration-tasks       | Tarefas de integracao (Eduzz, sync)    | 8x exponencial (3s base) | 3 | 10/s |
+
+Ambas as filas usam:
+- **Idempotencia**: jobId unico por tarefa (via ProcessedEvent ou dedup interno)
+- **Dead-letter**: apos esgotar retries, job vai para dead-letter automatico do BullMQ
+- **Observabilidade**: GET /api/queues/status (requer permissao settings:read)
+
+### Filas BullMQ (planejadas)
 
 | Fila                    | Descricao                              | Prioridade |
 |-------------------------|----------------------------------------|------------|
 | whatsapp-events         | Polling e processamento de eventos     | Alta       |
 | lead-classification     | Classificacao de novos leads           | Alta       |
-| message-sending         | Envio de mensagens WhatsApp            | Media      |
-| eduzz-sync              | Sincronizacao de compras Eduzz         | Media      |
 | ai-diagnosis            | Diagnostico IA para veteranos          | Baixa      |
 | import-processing       | Processamento de importacoes em massa  | Baixa      |
+
+### Rotas da API
+
+| Rota                         | Metodo | Permissao          | Descricao                        |
+|------------------------------|--------|---------------------|----------------------------------|
+| /api/auth/*                  | POST   | publica             | Login, logout, refresh           |
+| /api/campaigns/*             | CRUD   | campaigns:*         | Gestao de campanhas              |
+| /api/groups/*                | CRUD   | groups:*            | Gestao de grupos                 |
+| /api/contacts/*              | GET/PUT| contacts:read/update| Lista, detalhe, update contatos  |
+| /api/contacts/stats          | GET    | contacts:read       | Estatisticas de contatos         |
+| /api/imports/*               | CRUD   | campaigns:create    | Importacao CSV                   |
+| /api/flows/*                 | CRUD   | flows:*             | Gestao de fluxos                 |
+| /api/templates/*             | CRUD   | messages:*          | Templates de mensagem            |
+| /api/messages/*              | CRUD   | messages:*          | Mensagens e conversas            |
+| /api/diagnosis/*             | POST   | messages:create     | Diagnostico IA                   |
+| /api/knowledge-base/*        | CRUD   | settings:*          | Base de conhecimento IA          |
+| /api/dashboards/*            | GET    | reports:read        | Dashboards e metricas            |
+| /api/audit-logs              | GET    | audit:read          | Logs de auditoria                |
+| /api/settings/*              | CRUD   | settings:*          | Configuracoes do sistema         |
+| /api/queues/status           | GET    | settings:read       | Status das filas BullMQ          |
+| /api/integrations/*          | CRUD   | settings:*          | Configuracao de integracoes      |
+| /webhook/eduzz               | POST   | HMAC-SHA256         | Webhook Eduzz (purchase/refund)  |
+| /health                      | GET    | publica             | Health check                     |
+| /docs (Swagger)              | GET    | desabilitado prod   | Documentacao da API              |
 
 ## Decisoes arquiteturais chave
 
