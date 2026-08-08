@@ -17,6 +17,11 @@ import { redirectRoutes } from './routes/redirect.js';
 import { webhookRoutes } from './routes/webhook.js';
 import { messagingRoutes } from './routes/messaging.js';
 import { classificationRoutes } from './routes/classification.js';
+import { templateRoutes } from './routes/templates.js';
+import { flowRoutes } from './routes/flows.js';
+import { knowledgeRoutes } from './routes/knowledge.js';
+import { diagnosisRoutes } from './routes/diagnosis.js';
+import { handoffRoutes } from './routes/handoff.js';
 import { createLogger } from './logger.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -79,6 +84,11 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(integrationRoutes, { prefix: '/api' });
   await app.register(messagingRoutes, { prefix: '/api' });
   await app.register(classificationRoutes, { prefix: '/api' });
+  await app.register(templateRoutes, { prefix: '/api' });
+  await app.register(flowRoutes, { prefix: '/api' });
+  await app.register(knowledgeRoutes, { prefix: '/api' });
+  await app.register(diagnosisRoutes, { prefix: '/api' });
+  await app.register(handoffRoutes, { prefix: '/api' });
   await app.register(redirectRoutes);
   await app.register(webhookRoutes);
 

@@ -4,7 +4,7 @@ Ultima atualizacao: 2026-08-08
 
 ## Etapa atual
 
-**Etapa 07 - Motor de classificacao e integracoes de historico/aluno** (CONCLUIDA)
+**Etapa 08 - Mensagens, botoes, fluxos e Grok** (CONCLUIDA)
 
 ## O que esta pronto
 
@@ -148,9 +148,48 @@ Ultima atualizacao: 2026-08-08
 - [x] API override: POST /api/classification/override com validacao
 - [x] Testes integracao: 13 testes (novo, reparticipante, veterano, aluno, blocked, existing, simulate, override, group allocation, full group fallback, all full, invalid override, auth)
 
+### Etapa 08 - Mensagens, Botoes, Fluxos e Grok
+- [x] Template service: create, update (versionado), publish, deactivate, list, get
+- [x] Sistema de variaveis: allowlist (nome, telefone, classificacao, campanha, grupo, edicao, link, data_abertura, data_fechamento)
+- [x] Validacao de variaveis: rejeita variaveis desconhecidas
+- [x] Renderizacao de templates com substituicao de variaveis
+- [x] Extracao automatica de variaveis usadas
+- [x] Preview de template via API (render + validacao)
+- [x] Versoes de template imutaveis (isCurrent flag)
+- [x] Flow builder: create, add step, publish, new version (copia steps)
+- [x] Triggers permitidos: on_join, on_message, on_keyword, on_classification, on_button, manual
+- [x] Step types permitidos: message, condition, buttons, delay, handoff, classify, end
+- [x] Condicoes seguras: fields e operators allowlisted (sem codigo arbitrario)
+- [x] Deteccao de loops em fluxos (impede publicacao ciclica)
+- [x] Rejeita publicacao de fluxo vazio
+- [x] Botoes com fallback numerado para provedores sem interatividade
+- [x] Versoes de fluxo: nova versao copia steps da anterior
+- [x] AIProvider abstrato: interface com complete(), isAvailable()
+- [x] XaiProvider: adapter xAI/Grok (OpenAI-compatible API, token via env XAI_API_KEY)
+- [x] MockAiProvider: para testes sem chamada externa
+- [x] Limites de custo: maxTokensPerRequest, maxRequestsPerHour, maxCostCentsPerDay
+- [x] Timeout configuravel em chamadas de IA
+- [x] Knowledge base: CRUD de documentos, categorias, buildKnowledgeContext
+- [x] Business prompt versionado por campanha (via SystemSetting)
+- [x] Diagnostico para veteranos (3+ participacoes)
+- [x] Prompt de sistema separado (instrucoes, negocio, base de conhecimento)
+- [x] Conteudo do usuario tratado como nao confiavel (mensagem separada)
+- [x] Filtro de conteudo proibido: promessas de monetizacao, ganhos garantidos
+- [x] Fallback fixo quando IA indisponivel
+- [x] Parsing estruturado da resposta (DIAGNOSTICO/RECOMENDACOES/OBJECAO)
+- [x] Classificacao de objecao como sugestao da IA
+- [x] Persistencia de diagnostico com audit trail (provider, promptHash, tokensUsed, latencyMs)
+- [x] Playground sandbox: diagnostico sem usar contatos reais, sem persistir
+- [x] Playground rejeita participacoes < 3
+- [x] Handoff humano: create (muda status para 'handoff'), resolve (volta para 'active')
+- [x] Metricas de uso: tokensUsed, latencyMs, promptHash registrados
+- [x] RBAC: messages (create/read/update/delete), settings (read/update), contacts (read/update)
+- [x] Audit logging em todas as operacoes
+- [x] Testes integracao: 23 testes (variaveis, render, template CRUD, preview, flow CRUD, publish, buttons, loops, empty flow, knowledge CRUD, prohibited content, diagnosis 3+, diagnosis mock, playground, playground reject, handoff create/resolve, auth, variable extraction, flow versions)
+
 ## O que foi testado
 
-- [x] 140 testes passam (102 API + 22 worker + 16 web)
+- [x] 163 testes de apps passam (125 API + 22 worker + 16 web)
 - [x] 8 testes de constraints do banco (PostgreSQL real)
 - [x] 8 testes de auth (login, logout, sessao, auditoria)
 - [x] 3 testes de RBAC (owner, read_only, sessoes)
@@ -164,6 +203,7 @@ Ultima atualizacao: 2026-08-08
 - [x] 6 testes de integration health API (health empty, health with data, dead-letter, orphan groups, assign, auth)
 - [x] 13 testes de messaging (redirect CRUD, resolve+track, expired, max uses, invalid code, webhook message, webhook idempotent, delivery status, opt-out, deactivate, list, auth)
 - [x] 13 testes de classificacao (novo, reparticipante, veterano, aluno, blocked, existing, simulate, override, group alloc, full group, all full, invalid override, auth)
+- [x] 23 testes de flows/AI (variaveis, render, template CRUD, preview, flow CRUD, publish, buttons, loops, empty flow, knowledge CRUD, prohibited content, diagnosis 3+, diagnosis mock, playground, playground reject, handoff, auth, variable extraction, flow versions)
 - [x] 1 teste de health do worker
 - [x] 16 testes de componentes web (Button, Input, Badge, Alert, EmptyState, Skeleton, App, Login)
 - [x] Lint: 0 errors, 0 warnings
@@ -204,6 +244,12 @@ Ultima atualizacao: 2026-08-08
 | Redirect links                 | Allowlist + codigo aleatorio | -  |
 | MessagingProvider              | Interface + mock + fallback | -   |
 | Motor de classificacao         | Deterministico, sem IA      | -   |
+| Templates de mensagem          | Versionados + variaveis allowlisted | - |
+| Flow builder                   | Triggers/steps/conditions allowlisted | - |
+| AIProvider                     | Interface abstrata + xAI adapter | - |
+| Diagnostico IA                 | Grounded, filtro de conteudo proibido | - |
+| Fallback sem IA                | Resposta fixa quando indisponivel | - |
+| Playground                     | Sandbox sem dados reais         | -   |
 
 ## Migrations aplicadas
 
@@ -219,7 +265,7 @@ Ultima atualizacao: 2026-08-08
 | WhatsApp Manager API  | Implementada (Etapa 05) | Adapter, polling, reconciliacao |
 | WhatsApp Messaging    | Interface + mock (Etapa 06) | Provedor real pendente |
 | Eduzz                 | Interface pendente     | Contrato pendente          |
-| xAI/Grok              | Interface pendente     | API key pendente           |
+| xAI/Grok              | Adapter implementado (Etapa 08) | API key via env XAI_API_KEY |
 | Meta Marketing API    | Nao iniciada           | Conta Business pendente    |
 
 ## Riscos identificados
@@ -246,11 +292,4 @@ Ultima atualizacao: 2026-08-08
 
 ## Proximo passo
 
-**Etapa 06 - Contatos, classificacao e diagnostico**
-
-A Etapa 06 incluira:
-- CRUD de contatos com busca e filtros
-- Classificacao automatica de contatos por historico
-- Diagnostico de contatos via IA
-- Paginas frontend de contatos
-- Testes de classificacao e diagnostico
+**Etapa 09** - A ser lida do kit
