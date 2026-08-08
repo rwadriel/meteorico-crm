@@ -1,10 +1,10 @@
 # Estado do Projeto - Meteorico CRM
 
-Ultima atualizacao: 2026-08-07
+Ultima atualizacao: 2026-08-08
 
 ## Etapa atual
 
-**Etapa 04 - Campanhas, grupos, versoes e importacao inicial** (CONCLUIDA)
+**Etapa 05 - Consumidor da API de grupos e reconciliacao** (CONCLUIDA)
 
 ## O que esta pronto
 
@@ -75,9 +75,42 @@ Ultima atualizacao: 2026-08-07
 - [x] Testes integracao: groups CRUD (7 testes)
 - [x] Testes integracao: imports preview/confirm/rollback/student-prevails/idempotent/historical/vcard/path-traversal (12 testes)
 
+### Etapa 05 - Consumidor da API de Grupos e Reconciliacao
+- [x] WhatsAppManagerReadProvider: adapter read-only com health, events (cursor+paginacao), snapshots
+- [x] Contrato de interfaces: WmEvent, WmParticipant, WmEventsResponse, WmHealthResponse, WmSnapshotGroup
+- [x] createProvider() le env vars (WHATSAPP_MANAGER_URL, WHATSAPP_MANAGER_INTEGRATION_TOKEN)
+- [x] Event processor transacional: entrada (entrou/adicionado), saida (saiu/removido)
+- [x] Idempotencia por event_id via ProcessedEvent model
+- [x] Mapeamento groupId (whatsappId) para Group e Campaign
+- [x] Upsert de contato por phone (skip null numbers)
+- [x] GroupMembership: create/deactivate com currentCount atualizado
+- [x] CampaignParticipation: uma por contato/campanha, reativacao em reentrada
+- [x] totalParticipations incrementado apenas na primeira participacao por campanha
+- [x] Dead-letter queue: eventos com falha ou grupo desconhecido marcados em ProcessedEvent
+- [x] Grupo orfao: whatsappId desconhecido cria grupo inativo em campanha _orphan-events
+- [x] Eventos nao-membership (baseline, grupo_criado, alteracao) marcados como skipped
+- [x] Multi-participant: whatsappEventId com sufixo :N para unicidade
+- [x] Snapshot reconciliation: compara membros do snapshot com memberships ativas
+- [x] Worker polling loop com intervalo configuravel (WORKER_POLLING_INTERVAL_MS, default 10s)
+- [x] Paginacao completa: drena hasMore antes de dormir
+- [x] Cursor persistido via IntegrationCursor model (upsert apos cada pagina)
+- [x] Reconciliacao periodica configuravel (WORKER_RECONCILIATION_INTERVAL_MS, default 1h)
+- [x] Shutdown gracioso (SIGTERM/SIGINT) com disconnect
+- [x] API integration health: GET /api/integration/health (cursor, totais, erros recentes)
+- [x] API orphan groups: GET /api/integration/orphan-groups, POST assign
+- [x] Permissoes RBAC: integration read/write para owner e admin
+- [x] Frontend IntegrationsPage: dashboard com status, cursor, contadores, erros, grupos orfaos
+- [x] Auto-refresh a cada 30s no dashboard
+- [x] Testes adapter: 9 testes (endpoints, auth, erros HTTP, defaults)
+- [x] Testes event processor: 12 testes (entry, exit, re-entry, idempotency, multi-participant, null number, unknown group, skip non-membership, batch, adicionado/removido, contact name update)
+- [x] Testes integracao API: 6 testes (health empty, health with data, dead-letter errors, orphan groups, assign orphan, auth)
+- [x] Pino logger com redact de token, password, secret, phone, authorization
+- [x] Nenhum dado pessoal real em testes (phones ficticios 5511999990001+)
+- [x] Token nunca logado nem exposto
+
 ## O que foi testado
 
-- [x] 86 testes passam (86 = 70 API + 16 web)
+- [x] 114 testes passam (76 API + 22 worker + 16 web)
 - [x] 8 testes de constraints do banco (PostgreSQL real)
 - [x] 8 testes de auth (login, logout, sessao, auditoria)
 - [x] 3 testes de RBAC (owner, read_only, sessoes)
@@ -85,7 +118,11 @@ Ultima atualizacao: 2026-08-07
 - [x] 16 testes de campanhas (CRUD, lifecycle, duplication, versions, auth)
 - [x] 7 testes de grupos (CRUD, categorias, filtros, auth)
 - [x] 12 testes de importacao (preview, confirm, rollback, student prevails, idempotent, historical, vcard, path traversal)
-- [x] 12 testes unitarios de parser CSV (normalizePhone, parseContactsCsv, parseParticipationsCsv, sanitizeString)
+- [x] 20 testes unitarios de parser CSV (normalizePhone, parseContactsCsv, parseParticipationsCsv, sanitizeString)
+- [x] 9 testes do WhatsApp Manager adapter (endpoints, auth, HTTP errors, defaults)
+- [x] 12 testes do event processor (entry, exit, re-entry, idempotency, multi-participant, null number, unknown group, non-membership, batch, adicionado/removido, name update)
+- [x] 6 testes de integration health API (health empty, health with data, dead-letter, orphan groups, assign, auth)
+- [x] 1 teste de health do worker
 - [x] 16 testes de componentes web (Button, Input, Badge, Alert, EmptyState, Skeleton, App, Login)
 - [x] Lint: 0 errors, 0 warnings
 - [x] Typecheck: 7/7 packages passam
@@ -121,6 +158,7 @@ Ultima atualizacao: 2026-08-07
 | CSV parser                     | Manual (sem deps)   | -             |
 | File upload                    | @fastify/multipart  | -             |
 | Edition numbers                | Referencia historica, nao UUID | - |
+| Testes sequenciais             | workspace-concurrency=1 | -        |
 
 ## Migrations aplicadas
 
@@ -133,7 +171,7 @@ Ultima atualizacao: 2026-08-07
 
 | Integracao            | Status                | Notas                      |
 |-----------------------|-----------------------|----------------------------|
-| WhatsApp Manager API  | Kit disponivel, mockada | Implementacao na Etapa 06 |
+| WhatsApp Manager API  | Implementada (Etapa 05) | Adapter, polling, reconciliacao |
 | WhatsApp Messaging    | Interface pendente     | Provedor nao definido      |
 | Eduzz                 | Interface pendente     | Contrato pendente          |
 | xAI/Grok              | Interface pendente     | API key pendente           |
@@ -153,7 +191,7 @@ Ultima atualizacao: 2026-08-07
 
 | Item                                   | Prioridade | Necessario para |
 |----------------------------------------|------------|-----------------|
-| Logotipo e identidade visual           | Baixa      | Etapa 05 (UI)   |
+| Logotipo e identidade visual           | Baixa      | Etapa 06 (UI)   |
 | Dominio para staging                   | Media      | Etapa 08 (deploy)|
 | Dominio para producao                  | Media      | Etapa 08 (deploy)|
 | Escolha de provedor WhatsApp privado   | Alta       | Etapa 06        |
@@ -163,9 +201,9 @@ Ultima atualizacao: 2026-08-07
 
 ## Proximo passo
 
-**Etapa 05 - Contatos, classificacao e diagnostico**
+**Etapa 06 - Contatos, classificacao e diagnostico**
 
-A Etapa 05 incluira:
+A Etapa 06 incluira:
 - CRUD de contatos com busca e filtros
 - Classificacao automatica de contatos por historico
 - Diagnostico de contatos via IA

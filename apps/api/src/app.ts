@@ -12,6 +12,7 @@ import { authRoutes } from './routes/auth.js';
 import { campaignRoutes } from './routes/campaigns.js';
 import { groupRoutes } from './routes/groups.js';
 import { importRoutes } from './routes/imports.js';
+import { integrationRoutes } from './routes/integration.js';
 import { createLogger } from './logger.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -71,6 +72,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(campaignRoutes, { prefix: '/api' });
   await app.register(groupRoutes, { prefix: '/api' });
   await app.register(importRoutes, { prefix: '/api' });
+  await app.register(integrationRoutes, { prefix: '/api' });
 
   app.setErrorHandler((error: FastifyError, _request, reply) => {
     app.log.error(error, 'Unhandled error');
