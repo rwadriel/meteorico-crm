@@ -27,11 +27,13 @@ describe('normalizePhone', () => {
   });
 
   it('returns null for too-long number', () => {
-    expect(normalizePhone('551199999000099')).toBeNull();
+    expect(normalizePhone('5511999990000999')).toBeNull();
   });
 
-  it('returns null for non-BR prefix', () => {
-    expect(normalizePhone('441234567890')).toBeNull();
+  it('accepts international numbers', () => {
+    expect(normalizePhone('441234567890')).toBe('441234567890');
+    expect(normalizePhone('351912345678')).toBe('351912345678');
+    expect(normalizePhone('244923206134')).toBe('244923206134');
   });
 });
 

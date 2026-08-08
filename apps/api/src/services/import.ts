@@ -89,11 +89,7 @@ export function normalizePhone(raw: string): string | null {
     digits = '55' + digits;
   }
 
-  if (digits.length < 12 || digits.length > 13) {
-    return null;
-  }
-
-  if (!digits.startsWith('55')) {
+  if (digits.length < 7 || digits.length > 15) {
     return null;
   }
 
