@@ -28,6 +28,7 @@ import { queueRoutes } from './routes/queues.js';
 import { contactRoutes } from './routes/contacts.js';
 import { auditRoutes } from './routes/audit-logs.js';
 import { settingsRoutes } from './routes/settings.js';
+import { csrfProtection } from './middleware/csrf.js';
 import { createLogger } from './logger.js';
 
 const isProduction = (process.env.NODE_ENV ?? 'development') === 'production';
@@ -48,6 +49,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await app.register(cookie);
+
+  await csrfProtection(app);
 
   await app.register(rateLimit, {
     global: true,

@@ -8,6 +8,8 @@ const logger = createWorkerLogger();
 
 interface OutboundMessageJob {
   conversationId: string;
+  contactId?: string;
+  campaignId?: string;
   content: string;
   messageType: string;
   templateId?: string;
@@ -16,21 +18,35 @@ interface OutboundMessageJob {
 
 async function processOutboundMessage(job: Job<OutboundMessageJob>): Promise<void> {
   const db = getClient();
-  const { conversationId, idempotencyKey, content, messageType } = job.data;
+  const { conversationId, idempotencyKey, content, messageType, contactId, campaignId } = job.data;
 
-  const existing = await db.processedEvent.findUnique({
-    where: {
-      eventSource_externalEventId: {
-        eventSource: 'outbound-message',
-        externalEventId: idempotencyKey,
-      },
-    },
+  const existingRecord = await db.outboundRecord.findUnique({
+    where: { idempotencyKey },
   });
 
-  if (existing) {
-    logger.info({ idempotencyKey }, 'Duplicate message skipped');
+  if (existingRecord && existingRecord.status === 'sent') {
+    logger.info({ idempotencyKey }, 'Duplicate message skipped (already sent)');
     return;
   }
+
+  if (!existingRecord) {
+    await db.outboundRecord.create({
+      data: {
+        idempotencyKey,
+        contactId: contactId ?? null,
+        campaignId: campaignId ?? null,
+        conversationId,
+        provider: 'queue',
+        status: 'pending',
+        attempts: 0,
+      },
+    });
+  }
+
+  await db.outboundRecord.update({
+    where: { idempotencyKey },
+    data: { attempts: { increment: 1 } },
+  });
 
   const conversation = await db.conversation.findUnique({
     where: { id: conversationId },
@@ -38,6 +54,10 @@ async function processOutboundMessage(job: Job<OutboundMessageJob>): Promise<voi
   });
 
   if (!conversation) {
+    await db.outboundRecord.update({
+      where: { idempotencyKey },
+      data: { status: 'failed', lastError: `Conversation ${conversationId} not found` },
+    });
     throw new Error(`Conversation ${conversationId} not found`);
   }
 
@@ -51,18 +71,14 @@ async function processOutboundMessage(job: Job<OutboundMessageJob>): Promise<voi
 
   if (optOut) {
     logger.warn({ contactId: conversation.contactId }, 'Contact opted out, skipping');
-    await db.processedEvent.create({
-      data: {
-        eventSource: 'outbound-message',
-        externalEventId: idempotencyKey,
-        eventType: 'message_skipped',
-        result: 'opted_out',
-      },
+    await db.outboundRecord.update({
+      where: { idempotencyKey },
+      data: { status: 'skipped', lastError: 'opted_out' },
     });
     return;
   }
 
-  await db.conversationMessage.create({
+  const message = await db.conversationMessage.create({
     data: {
       conversationId,
       direction: 'outbound',
@@ -75,16 +91,17 @@ async function processOutboundMessage(job: Job<OutboundMessageJob>): Promise<voi
     },
   });
 
-  await db.processedEvent.create({
+  await db.outboundRecord.update({
+    where: { idempotencyKey },
     data: {
-      eventSource: 'outbound-message',
-      externalEventId: idempotencyKey,
-      eventType: 'message_sent',
-      result: 'queued',
+      status: 'sent',
+      sentAt: new Date(),
+      providerMessageId: message.id,
+      contactId: conversation.contactId,
     },
   });
 
-  logger.info({ conversationId, idempotencyKey }, 'Message queued for delivery');
+  logger.info({ conversationId, idempotencyKey }, 'Message sent');
 }
 
 export function startOutboundMessageWorker(): Worker<OutboundMessageJob> {
@@ -103,6 +120,13 @@ export function startOutboundMessageWorker(): Worker<OutboundMessageJob> {
   });
 
   worker.on('failed', (job, err) => {
+    if (job) {
+      const db = getClient();
+      db.outboundRecord.update({
+        where: { idempotencyKey: job.data.idempotencyKey },
+        data: { status: 'failed', lastError: err.message },
+      }).catch((e) => logger.error({ err: e }, 'Failed to update outbound record on failure'));
+    }
     logger.error(
       { jobId: job?.id, error: err.message, attempts: job?.attemptsMade },
       'Outbound message failed',

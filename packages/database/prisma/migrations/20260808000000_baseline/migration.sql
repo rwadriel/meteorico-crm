@@ -1,3 +1,6 @@
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
+
 -- CreateTable
 CREATE TABLE "roles" (
     "id" TEXT NOT NULL,
@@ -51,6 +54,7 @@ CREATE TABLE "sessions" (
 CREATE TABLE "contacts" (
     "id" TEXT NOT NULL,
     "phone" TEXT,
+    "email" TEXT,
     "name" TEXT NOT NULL DEFAULT '',
     "normalized_phone" TEXT,
     "first_seen_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -82,8 +86,11 @@ CREATE TABLE "campaigns" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "slug" TEXT NOT NULL,
+    "edition_number" INTEGER,
     "status" TEXT NOT NULL DEFAULT 'draft',
+    "timezone" TEXT NOT NULL DEFAULT 'America/Sao_Paulo',
     "cart_open_day" TEXT NOT NULL DEFAULT 'wednesday',
+    "captation_starts_at" TIMESTAMP(3),
     "starts_at" TIMESTAMP(3),
     "ends_at" TIMESTAMP(3),
     "created_by" TEXT NOT NULL,
@@ -129,8 +136,10 @@ CREATE TABLE "groups" (
     "whatsapp_id" TEXT,
     "name" TEXT NOT NULL,
     "category" TEXT NOT NULL,
+    "invite_link" TEXT,
     "capacity" INTEGER NOT NULL DEFAULT 256,
     "current_count" INTEGER NOT NULL DEFAULT 0,
+    "priority" INTEGER NOT NULL DEFAULT 0,
     "is_active" BOOLEAN NOT NULL DEFAULT true,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
@@ -197,6 +206,14 @@ CREATE TABLE "lead_attributions" (
     "medium" TEXT NOT NULL DEFAULT '',
     "campaign_ref" TEXT NOT NULL DEFAULT '',
     "landing_url" TEXT NOT NULL DEFAULT '',
+    "meta_campaign_id" TEXT,
+    "meta_adset_id" TEXT,
+    "meta_ad_id" TEXT,
+    "creative_id" TEXT,
+    "placement" TEXT,
+    "tracking_code" TEXT,
+    "clicked_at" TIMESTAMP(3),
+    "confidence" TEXT NOT NULL DEFAULT 'medium',
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "lead_attributions_pkey" PRIMARY KEY ("id")
@@ -237,6 +254,9 @@ CREATE TABLE "conversation_messages" (
     "content" TEXT NOT NULL,
     "message_type" TEXT NOT NULL DEFAULT 'text',
     "template_id" TEXT,
+    "external_message_id" TEXT,
+    "provider" TEXT,
+    "delivery_status" TEXT NOT NULL DEFAULT 'pending',
     "sent_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "delivered_at" TIMESTAMP(3),
     "read_at" TIMESTAMP(3),
@@ -269,6 +289,41 @@ CREATE TABLE "message_template_versions" (
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "message_template_versions_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "redirect_links" (
+    "id" TEXT NOT NULL,
+    "code" TEXT NOT NULL,
+    "campaign_id" TEXT NOT NULL,
+    "destination_url" TEXT NOT NULL,
+    "utm_source" TEXT NOT NULL DEFAULT '',
+    "utm_medium" TEXT NOT NULL DEFAULT '',
+    "utm_campaign" TEXT NOT NULL DEFAULT '',
+    "utm_content" TEXT NOT NULL DEFAULT '',
+    "fbclid" TEXT NOT NULL DEFAULT '',
+    "max_uses" INTEGER,
+    "used_count" INTEGER NOT NULL DEFAULT 0,
+    "expires_at" TIMESTAMP(3),
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+    "created_by" TEXT NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "redirect_links_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "contact_preferences" (
+    "id" TEXT NOT NULL,
+    "contact_id" TEXT NOT NULL,
+    "channel" TEXT NOT NULL DEFAULT 'whatsapp',
+    "opted_out" BOOLEAN NOT NULL DEFAULT false,
+    "blocked_at" TIMESTAMP(3),
+    "reason" TEXT NOT NULL DEFAULT '',
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "contact_preferences_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -483,6 +538,25 @@ CREATE TABLE "import_rows" (
 );
 
 -- CreateTable
+CREATE TABLE "outbound_records" (
+    "id" TEXT NOT NULL,
+    "idempotency_key" TEXT NOT NULL,
+    "contact_id" TEXT,
+    "campaign_id" TEXT,
+    "conversation_id" TEXT,
+    "provider" TEXT NOT NULL DEFAULT '',
+    "provider_message_id" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "attempts" INTEGER NOT NULL DEFAULT 0,
+    "sent_at" TIMESTAMP(3),
+    "last_error" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "outbound_records_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "audit_logs" (
     "id" TEXT NOT NULL,
     "user_id" TEXT,
@@ -529,10 +603,16 @@ CREATE UNIQUE INDEX "contacts_phone_key" ON "contacts"("phone");
 CREATE INDEX "contacts_normalized_phone_idx" ON "contacts"("normalized_phone");
 
 -- CreateIndex
+CREATE INDEX "contacts_email_idx" ON "contacts"("email");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "contact_identifiers_type_value_key" ON "contact_identifiers"("type", "value");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "campaigns_slug_key" ON "campaigns"("slug");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "campaigns_edition_number_key" ON "campaigns"("edition_number");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "campaign_versions_campaign_id_version_key" ON "campaign_versions"("campaign_id", "version");
@@ -559,10 +639,28 @@ CREATE UNIQUE INDEX "integration_cursors_integration_key" ON "integration_cursor
 CREATE UNIQUE INDEX "processed_events_event_source_external_event_id_key" ON "processed_events"("event_source", "external_event_id");
 
 -- CreateIndex
+CREATE INDEX "lead_attributions_meta_campaign_id_idx" ON "lead_attributions"("meta_campaign_id");
+
+-- CreateIndex
+CREATE INDEX "lead_attributions_tracking_code_idx" ON "lead_attributions"("tracking_code");
+
+-- CreateIndex
 CREATE INDEX "conversations_contact_id_status_idx" ON "conversations"("contact_id", "status");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "conversation_messages_external_message_id_key" ON "conversation_messages"("external_message_id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "message_template_versions_template_id_version_key" ON "message_template_versions"("template_id", "version");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "redirect_links_code_key" ON "redirect_links"("code");
+
+-- CreateIndex
+CREATE INDEX "redirect_links_code_idx" ON "redirect_links"("code");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "contact_preferences_contact_id_channel_key" ON "contact_preferences"("contact_id", "channel");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "flow_versions_flow_id_version_key" ON "flow_versions"("flow_id", "version");
@@ -575,6 +673,12 @@ CREATE UNIQUE INDEX "integration_connections_provider_key" ON "integration_conne
 
 -- CreateIndex
 CREATE INDEX "integration_logs_provider_created_at_idx" ON "integration_logs"("provider", "created_at");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "outbound_records_idempotency_key_key" ON "outbound_records"("idempotency_key");
+
+-- CreateIndex
+CREATE INDEX "outbound_records_contact_id_campaign_id_idx" ON "outbound_records"("contact_id", "campaign_id");
 
 -- CreateIndex
 CREATE INDEX "audit_logs_created_at_idx" ON "audit_logs"("created_at");
@@ -653,6 +757,15 @@ ALTER TABLE "message_templates" ADD CONSTRAINT "message_templates_created_by_fke
 
 -- AddForeignKey
 ALTER TABLE "message_template_versions" ADD CONSTRAINT "message_template_versions_template_id_fkey" FOREIGN KEY ("template_id") REFERENCES "message_templates"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "redirect_links" ADD CONSTRAINT "redirect_links_campaign_id_fkey" FOREIGN KEY ("campaign_id") REFERENCES "campaigns"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "redirect_links" ADD CONSTRAINT "redirect_links_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "admin_users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "contact_preferences" ADD CONSTRAINT "contact_preferences_contact_id_fkey" FOREIGN KEY ("contact_id") REFERENCES "contacts"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "flow_definitions" ADD CONSTRAINT "flow_definitions_created_by_fkey" FOREIGN KEY ("created_by") REFERENCES "admin_users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

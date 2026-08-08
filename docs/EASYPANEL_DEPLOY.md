@@ -72,17 +72,26 @@
 1. Push para branch `staging`
 2. EasyPanel rebuilda automaticamente (ou manual via webhook)
 3. Aguardar health check verde
-4. Rodar migrations: `pnpm --filter @meteorico/database exec prisma db push`
+4. Rodar migrations: `pnpm --filter @meteorico/database exec prisma migrate deploy`
 5. Seed (primeira vez): `pnpm --filter @meteorico/database exec prisma db seed`
 6. Smoke tests: health, login, criar campanha, classificar contato
+
+**IMPORTANTE**: Nunca usar `prisma db push` em staging ou producao. Usar sempre `prisma migrate deploy`.
 
 ### Producao
 1. **BACKUP** do banco antes de qualquer coisa
 2. Push para `main` (requer aprovacao humana)
 3. Aguardar build e health check
-4. Rodar migrations
+4. Rodar migrations: `pnpm --filter @meteorico/database exec prisma migrate deploy`
 5. Smoke tests
 6. Monitorar logs por 30 minutos
+
+### Rollback de migration
+Se uma migration falhar:
+1. **Nao** executar `prisma migrate reset` em producao (destroi dados)
+2. Criar uma nova migration "forward-fix" que reverte as alteracoes
+3. Aplicar com `prisma migrate deploy`
+4. Se necessario, marcar migration como resolvida: `prisma migrate resolve --rolled-back <migration_name>`
 
 ## Rollback
 

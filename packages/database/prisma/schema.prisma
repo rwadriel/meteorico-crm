@@ -675,6 +675,27 @@ model ImportRow {
   @@map("import_rows")
 }
 
+// ─── Outbound Records (idempotency) ─────────────────────────────────
+
+model OutboundRecord {
+  id                String    @id @default(uuid())
+  idempotencyKey    String    @unique @map("idempotency_key")
+  contactId         String?   @map("contact_id")
+  campaignId        String?   @map("campaign_id")
+  conversationId    String?   @map("conversation_id")
+  provider          String    @default("")
+  providerMessageId String?   @map("provider_message_id")
+  status            String    @default("pending")
+  attempts          Int       @default(0)
+  sentAt            DateTime? @map("sent_at")
+  lastError         String?   @map("last_error")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@index([contactId, campaignId])
+  @@map("outbound_records")
+}
+
 // ─── Audit & System ──────────────────────────────────────────────────
 
 model AuditLog {
