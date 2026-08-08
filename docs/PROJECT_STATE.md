@@ -4,7 +4,7 @@ Ultima atualizacao: 2026-08-08
 
 ## Etapa atual
 
-**Etapa 08 - Mensagens, botoes, fluxos e Grok** (CONCLUIDA)
+**Etapa 09 - Dashboards, Eduzz, trafego e relatorios** (CONCLUIDA)
 
 ## O que esta pronto
 
@@ -187,9 +187,32 @@ Ultima atualizacao: 2026-08-08
 - [x] Audit logging em todas as operacoes
 - [x] Testes integracao: 23 testes (variaveis, render, template CRUD, preview, flow CRUD, publish, buttons, loops, empty flow, knowledge CRUD, prohibited content, diagnosis 3+, diagnosis mock, playground, playground reject, handoff create/resolve, auth, variable extraction, flow versions)
 
+### Etapa 09 - Dashboards, Eduzz, Trafego e Relatorios
+- [x] Dashboard global: contatos, participacoes, entradas, saidas, compras, receita, reembolsos, receita liquida, conversas, mensagens, cliques, diagnosticos
+- [x] Dashboard por campanha: participacoes, classificacoes agrupadas, entradas/saidas, compras, receita, conversas, mensagens, grupos
+- [x] Dashboard por grupo: memberships ativas, eventos, fill rate
+- [x] Linha do tempo do contato: participacoes, eventos, compras, mensagens recentes, diagnosticos
+- [x] Telefone mascarado em timeline e exportacao (privacidade)
+- [x] Comparacao entre campanhas: participacoes, compras, receita, conversas, taxa de conversao
+- [x] Filtros de periodo (from/to) em dashboard global
+- [x] Exportacao CSV segura: formula injection protection, phones mascarados
+- [x] Dicionario de metricas (GET /api/analytics/metrics)
+- [x] Freshness indicator (calculatedAt, isEstimate) em cada dashboard
+- [x] Contato em multiplas campanhas: contato unico deduplica, participacoes somam
+- [x] Eduzz webhook: purchase_completed (cria contato, purchase, student status)
+- [x] Eduzz webhook: purchase_refunded (cria refund sem apagar purchase)
+- [x] Eduzz webhook: subscription_cancelled (student status)
+- [x] Eduzz webhook idempotente (via ProcessedEvent)
+- [x] Receita liquida = bruta - reembolsos
+- [x] Normalizacao de telefone Eduzz (BR +55)
+- [x] Paginacao em contact timeline (page/limit, max 100)
+- [x] Comparacao rejeita < 2 ou > 10 campanhas
+- [x] RBAC: reports (read/export), contacts (read)
+- [x] Testes integracao: 14 testes (dashboard vazio, dashboard com dados, campaign dashboard, group dashboard, contact timeline, comparacao, export CSV, metricas, Eduzz purchase+refund, idempotencia, receita liquida, filtro de data, auth, multi-campanha)
+
 ## O que foi testado
 
-- [x] 163 testes de apps passam (125 API + 22 worker + 16 web)
+- [x] 177 testes de apps passam (139 API + 22 worker + 16 web)
 - [x] 8 testes de constraints do banco (PostgreSQL real)
 - [x] 8 testes de auth (login, logout, sessao, auditoria)
 - [x] 3 testes de RBAC (owner, read_only, sessoes)
@@ -204,6 +227,7 @@ Ultima atualizacao: 2026-08-08
 - [x] 13 testes de messaging (redirect CRUD, resolve+track, expired, max uses, invalid code, webhook message, webhook idempotent, delivery status, opt-out, deactivate, list, auth)
 - [x] 13 testes de classificacao (novo, reparticipante, veterano, aluno, blocked, existing, simulate, override, group alloc, full group, all full, invalid override, auth)
 - [x] 23 testes de flows/AI (variaveis, render, template CRUD, preview, flow CRUD, publish, buttons, loops, empty flow, knowledge CRUD, prohibited content, diagnosis 3+, diagnosis mock, playground, playground reject, handoff, auth, variable extraction, flow versions)
+- [x] 14 testes de analytics/Eduzz (dashboard vazio, dashboard com dados, campaign dashboard, group dashboard, contact timeline, comparacao, export CSV, metricas, Eduzz purchase+refund, idempotencia, receita liquida, filtro de data, auth, multi-campanha)
 - [x] 1 teste de health do worker
 - [x] 16 testes de componentes web (Button, Input, Badge, Alert, EmptyState, Skeleton, App, Login)
 - [x] Lint: 0 errors, 0 warnings
@@ -250,6 +274,10 @@ Ultima atualizacao: 2026-08-08
 | Diagnostico IA                 | Grounded, filtro de conteudo proibido | - |
 | Fallback sem IA                | Resposta fixa quando indisponivel | - |
 | Playground                     | Sandbox sem dados reais         | -   |
+| Dashboards                     | Agregacoes em tempo real        | -   |
+| Exportacao CSV                 | Formula injection protection    | -   |
+| Eduzz webhook                  | Idempotente via ProcessedEvent  | -   |
+| Receita liquida                | Bruta - reembolsos (refund preserva purchase) | - |
 
 ## Migrations aplicadas
 
@@ -264,7 +292,7 @@ Ultima atualizacao: 2026-08-08
 |-----------------------|-----------------------|----------------------------|
 | WhatsApp Manager API  | Implementada (Etapa 05) | Adapter, polling, reconciliacao |
 | WhatsApp Messaging    | Interface + mock (Etapa 06) | Provedor real pendente |
-| Eduzz                 | Interface pendente     | Contrato pendente          |
+| Eduzz                 | Webhook implementado (Etapa 09) | Mock provider, contrato real pendente |
 | xAI/Grok              | Adapter implementado (Etapa 08) | API key via env XAI_API_KEY |
 | Meta Marketing API    | Nao iniciada           | Conta Business pendente    |
 
@@ -292,4 +320,4 @@ Ultima atualizacao: 2026-08-08
 
 ## Proximo passo
 
-**Etapa 09** - A ser lida do kit
+**Etapa 10** - A ser lida do kit

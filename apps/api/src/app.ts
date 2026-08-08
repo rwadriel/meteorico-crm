@@ -22,6 +22,8 @@ import { flowRoutes } from './routes/flows.js';
 import { knowledgeRoutes } from './routes/knowledge.js';
 import { diagnosisRoutes } from './routes/diagnosis.js';
 import { handoffRoutes } from './routes/handoff.js';
+import { analyticsRoutes } from './routes/analytics.js';
+import { eduzzWebhookRoutes } from './routes/eduzz-webhook.js';
 import { createLogger } from './logger.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -89,8 +91,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(knowledgeRoutes, { prefix: '/api' });
   await app.register(diagnosisRoutes, { prefix: '/api' });
   await app.register(handoffRoutes, { prefix: '/api' });
+  await app.register(analyticsRoutes, { prefix: '/api' });
   await app.register(redirectRoutes);
   await app.register(webhookRoutes);
+  await app.register(eduzzWebhookRoutes);
 
   app.setErrorHandler((error: FastifyError, _request, reply) => {
     app.log.error(error, 'Unhandled error');
