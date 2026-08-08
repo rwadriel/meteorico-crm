@@ -6,8 +6,12 @@ import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import multipart from '@fastify/multipart';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
+import { campaignRoutes } from './routes/campaigns.js';
+import { groupRoutes } from './routes/groups.js';
+import { importRoutes } from './routes/imports.js';
 import { createLogger } from './logger.js';
 
 export async function buildApp(): Promise<FastifyInstance> {
@@ -47,6 +51,12 @@ export async function buildApp(): Promise<FastifyInstance> {
     routePrefix: '/docs',
   });
 
+  await app.register(multipart, {
+    limits: {
+      fileSize: 10 * 1024 * 1024,
+    },
+  });
+
   await app.register(healthRoutes);
 
   await app.register(authRoutes, {
@@ -57,6 +67,10 @@ export async function buildApp(): Promise<FastifyInstance> {
       },
     },
   });
+
+  await app.register(campaignRoutes, { prefix: '/api' });
+  await app.register(groupRoutes, { prefix: '/api' });
+  await app.register(importRoutes, { prefix: '/api' });
 
   app.setErrorHandler((error: FastifyError, _request, reply) => {
     app.log.error(error, 'Unhandled error');

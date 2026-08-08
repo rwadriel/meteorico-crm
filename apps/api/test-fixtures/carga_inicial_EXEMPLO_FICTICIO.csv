@@ -1,0 +1,4 @@
+﻿telefone,nome,email,quantidade_participacoes,ultima_edicao,aluno,produto,origem,data_primeiro_contato,data_ultimo_contato,observacoes
+5591999990001,Ana Exemplo,,1,40,nao,,vcard_participantes_anteriores,,,Campanha histórica fictícia para teste.
+5591999990002,Carlos Exemplo,,0,,sim,Produto Exemplo,vcard_alunos,,,Aluno fictício para teste.
+5591999990003,Marina Exemplo,,2,39,nao,,vcard_participantes_anteriores,,,Contato fictício com duas campanhas para testar veterano.

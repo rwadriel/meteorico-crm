@@ -125,16 +125,17 @@ model ContactIdentifier {
 // ─── Campaigns ───────────────────────────────────────────────────────
 
 model Campaign {
-  id          String   @id @default(uuid())
-  name        String
-  slug        String   @unique
-  status      String   @default("draft")
-  cartOpenDay String   @default("wednesday") @map("cart_open_day")
-  startsAt    DateTime? @map("starts_at")
-  endsAt      DateTime? @map("ends_at")
-  createdBy   String   @map("created_by")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id            String    @id @default(uuid())
+  name          String
+  slug          String    @unique
+  editionNumber Int?      @unique @map("edition_number")
+  status        String    @default("draft")
+  cartOpenDay   String    @default("wednesday") @map("cart_open_day")
+  startsAt      DateTime? @map("starts_at")
+  endsAt        DateTime? @map("ends_at")
+  createdBy     String    @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   creator        AdminUser @relation(fields: [createdBy], references: [id])
   versions       CampaignVersion[]
@@ -191,8 +192,10 @@ model Group {
   whatsappId   String?  @map("whatsapp_id")
   name         String
   category     String
+  inviteLink   String?  @map("invite_link")
   capacity     Int      @default(256)
   currentCount Int      @default(0) @map("current_count")
+  priority     Int      @default(0)
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")

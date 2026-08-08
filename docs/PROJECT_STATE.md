@@ -4,7 +4,7 @@ Ultima atualizacao: 2026-08-07
 
 ## Etapa atual
 
-**Etapa 03 - Design system e painel administrativo base** (CONCLUIDA)
+**Etapa 04 - Campanhas, grupos, versoes e importacao inicial** (CONCLUIDA)
 
 ## O que esta pronto
 
@@ -43,18 +43,49 @@ Ultima atualizacao: 2026-08-07
 - [x] Sidebar com navegacao por secao e controle de permissao
 - [x] Pagina de Login completa com tratamento de erro
 - [x] Dashboard com cards de estatisticas
-- [x] Placeholder pages: Campanhas, Grupos, Contatos, Mensagens, Fluxos, IA, Integracoes, Importacoes, Auditoria, Configuracoes
 - [x] Router com rotas protegidas e redirect
 - [x] Responsivo (mobile sidebar overlay, breakpoints 1024px e 640px)
 - [x] Acessibilidade: focus-visible, aria-labels, role attributes, prefers-reduced-motion
 - [x] Testes de componentes (16 testes web)
 
+### Etapa 04 - Campanhas, Grupos, Versoes e Importacao
+- [x] Schema migration: editionNumber em Campaign, inviteLink e priority em Group
+- [x] Zod schemas: campaign, group, import (validacao completa)
+- [x] Campaign CRUD: create, read, update, delete, list com filtros e busca
+- [x] Campaign lifecycle: activate (valida draft/groups/dates/no-other-active), complete, archive
+- [x] Campaign duplication: copia grupos, +7 dias, incrementa editionNumber
+- [x] Campaign versions: publish e list
+- [x] Group CRUD: create com 5 categorias (novo/reparticipante/veterano/aluno/geral), update, delete
+- [x] CSV import: parser manual (sem dependencia), sanitizacao de formula injection
+- [x] Phone normalization: BR numbers, +55 prefix, validacao 12-13 digitos
+- [x] Import preview: parse, validacao, criacao de ImportRow records
+- [x] Import confirm (contacts): upsert por phone, student prevails, merge metadata
+- [x] Import confirm (participations): cria contatos, campanhas historicas (sem datas inventadas), participacoes
+- [x] Import rollback: desfaz creates, mantem updates
+- [x] rotulos_vcard vai para metadata de participacao, nunca vira nome de contato
+- [x] Importacao idempotente (reimport nao duplica)
+- [x] Path traversal check em filenames
+- [x] Multipart file upload via @fastify/multipart
+- [x] Audit logging em todas as operacoes
+- [x] Frontend: CampaignsPage (list/filter/search/create/duplicate/activate/complete/archive/delete)
+- [x] Frontend: GroupsPage (list por campanha/create/edit/delete com 5 categorias)
+- [x] Frontend: ImportsPage (wizard upload/preview/confirm, historico, rollback)
+- [x] Testes unitarios: normalizePhone, parseContactsCsv, parseParticipationsCsv, sanitizeString
+- [x] Testes integracao: campaigns CRUD e lifecycle (16 testes)
+- [x] Testes integracao: groups CRUD (7 testes)
+- [x] Testes integracao: imports preview/confirm/rollback/student-prevails/idempotent/historical/vcard/path-traversal (12 testes)
+
 ## O que foi testado
 
-- [x] 86 testes passam (14 test files)
+- [x] 86 testes passam (86 = 70 API + 16 web)
 - [x] 8 testes de constraints do banco (PostgreSQL real)
 - [x] 8 testes de auth (login, logout, sessao, auditoria)
 - [x] 3 testes de RBAC (owner, read_only, sessoes)
+- [x] 2 testes de health
+- [x] 16 testes de campanhas (CRUD, lifecycle, duplication, versions, auth)
+- [x] 7 testes de grupos (CRUD, categorias, filtros, auth)
+- [x] 12 testes de importacao (preview, confirm, rollback, student prevails, idempotent, historical, vcard, path traversal)
+- [x] 12 testes unitarios de parser CSV (normalizePhone, parseContactsCsv, parseParticipationsCsv, sanitizeString)
 - [x] 16 testes de componentes web (Button, Input, Badge, Alert, EmptyState, Skeleton, App, Login)
 - [x] Lint: 0 errors, 0 warnings
 - [x] Typecheck: 7/7 packages passam
@@ -87,18 +118,22 @@ Ultima atualizacao: 2026-08-07
 | Roteamento                     | React Router v7     | -             |
 | Icones                         | Lucide React        | -             |
 | Testes componentes             | Testing Library     | -             |
+| CSV parser                     | Manual (sem deps)   | -             |
+| File upload                    | @fastify/multipart  | -             |
+| Edition numbers                | Referencia historica, nao UUID | - |
 
 ## Migrations aplicadas
 
 | Migration                | Descricao                         |
 |--------------------------|-----------------------------------|
 | 20260807215706_init      | Schema completo (30+ tabelas)     |
+| 20260807192111_add_campaign_edition_group_priority | editionNumber, inviteLink, priority |
 
 ## Integracoes
 
 | Integracao            | Status                | Notas                      |
 |-----------------------|-----------------------|----------------------------|
-| WhatsApp Manager API  | Kit disponivel, mockada | Implementacao na Etapa 04 |
+| WhatsApp Manager API  | Kit disponivel, mockada | Implementacao na Etapa 06 |
 | WhatsApp Messaging    | Interface pendente     | Provedor nao definido      |
 | Eduzz                 | Interface pendente     | Contrato pendente          |
 | xAI/Grok              | Interface pendente     | API key pendente           |
@@ -121,7 +156,6 @@ Ultima atualizacao: 2026-08-07
 | Logotipo e identidade visual           | Baixa      | Etapa 05 (UI)   |
 | Dominio para staging                   | Media      | Etapa 08 (deploy)|
 | Dominio para producao                  | Media      | Etapa 08 (deploy)|
-| Documentacao API de participacoes      | Alta       | Etapa 04        |
 | Escolha de provedor WhatsApp privado   | Alta       | Etapa 06        |
 | Contrato e credenciais Eduzz           | Media      | Etapa 07        |
 | Conta Meta Business Manager            | Baixa      | Etapa 07        |
@@ -129,11 +163,11 @@ Ultima atualizacao: 2026-08-07
 
 ## Proximo passo
 
-**Etapa 04 - API CRUD e logica de negocio**
+**Etapa 05 - Contatos, classificacao e diagnostico**
 
-A Etapa 04 incluira:
-- CRUD de campanhas, contatos, grupos
-- Logica de classificacao integrada
-- Endpoints de participacoes
-- Validacao Zod em todas as rotas
-- Testes de API completos
+A Etapa 05 incluira:
+- CRUD de contatos com busca e filtros
+- Classificacao automatica de contatos por historico
+- Diagnostico de contatos via IA
+- Paginas frontend de contatos
+- Testes de classificacao e diagnostico
