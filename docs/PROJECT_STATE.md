@@ -4,7 +4,7 @@ Ultima atualizacao: 2026-08-08
 
 ## Etapa atual
 
-**Etapa 06 - Conversa privada, redirecionador e atribuicao** (CONCLUIDA)
+**Etapa 07 - Motor de classificacao e integracoes de historico/aluno** (CONCLUIDA)
 
 ## O que esta pronto
 
@@ -130,9 +130,27 @@ Ultima atualizacao: 2026-08-08
 - [x] Frontend MessagesPage: CRUD de redirect links, visualizacao de campanhas
 - [x] Testes integracao: 13 testes (create link, disallowed destination, resolve+track, expired, max uses, invalid code, webhook message, webhook idempotent, delivery status, opt-out, deactivate, list filter, auth)
 
+### Etapa 07 - Motor de Classificacao e Integracoes
+- [x] classifyContact: motor deterministico com regras configuráveis
+- [x] Precedencia: opt-out/bloqueado > aluno > participacao existente > historico > fallback
+- [x] Regra aluno: isStudent=true prevalece sobre historico
+- [x] Regra novo: 0 participacoes anteriores
+- [x] Regra reparticipante: 1 participacao anterior
+- [x] Regra veterano: >=2 participacoes anteriores (threshold configuravel)
+- [x] Participacao existente na campanha mantem classificacao
+- [x] allocateGroup: seleciona grupo por categoria, prioridade e capacidade
+- [x] Fallback: categoria especifica -> geral -> qualquer grupo -> null
+- [x] persistClassification: upsert com facts auditaveis em metadata
+- [x] overrideClassification: override manual com audit trail (adminUserId, timestamp)
+- [x] simulateClassification: decisao sem efeitos colaterais
+- [x] API classify: POST /api/classification/classify com audit log
+- [x] API simulate: POST /api/classification/simulate (read permission)
+- [x] API override: POST /api/classification/override com validacao
+- [x] Testes integracao: 13 testes (novo, reparticipante, veterano, aluno, blocked, existing, simulate, override, group allocation, full group fallback, all full, invalid override, auth)
+
 ## O que foi testado
 
-- [x] 127 testes passam (89 API + 22 worker + 16 web)
+- [x] 140 testes passam (102 API + 22 worker + 16 web)
 - [x] 8 testes de constraints do banco (PostgreSQL real)
 - [x] 8 testes de auth (login, logout, sessao, auditoria)
 - [x] 3 testes de RBAC (owner, read_only, sessoes)
@@ -145,6 +163,7 @@ Ultima atualizacao: 2026-08-08
 - [x] 12 testes do event processor (entry, exit, re-entry, idempotency, multi-participant, null number, unknown group, non-membership, batch, adicionado/removido, name update)
 - [x] 6 testes de integration health API (health empty, health with data, dead-letter, orphan groups, assign, auth)
 - [x] 13 testes de messaging (redirect CRUD, resolve+track, expired, max uses, invalid code, webhook message, webhook idempotent, delivery status, opt-out, deactivate, list, auth)
+- [x] 13 testes de classificacao (novo, reparticipante, veterano, aluno, blocked, existing, simulate, override, group alloc, full group, all full, invalid override, auth)
 - [x] 1 teste de health do worker
 - [x] 16 testes de componentes web (Button, Input, Badge, Alert, EmptyState, Skeleton, App, Login)
 - [x] Lint: 0 errors, 0 warnings
@@ -184,6 +203,7 @@ Ultima atualizacao: 2026-08-08
 | Testes sequenciais             | workspace-concurrency=1 | -        |
 | Redirect links                 | Allowlist + codigo aleatorio | -  |
 | MessagingProvider              | Interface + mock + fallback | -   |
+| Motor de classificacao         | Deterministico, sem IA      | -   |
 
 ## Migrations aplicadas
 
