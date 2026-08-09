@@ -63,7 +63,7 @@ describe('Campaigns Integration', () => {
 
   it('creates a campaign', async () => {
     const res = await app.inject({
-      method: 'POST', url: '/api/campaigns',
+      method: 'POST', url: '/campaigns',
       cookies: { meteorico_session: sessionCookie },
       payload: { name: 'Lancamento Teste', slug: 'lancamento-teste', cartOpenDay: 'wednesday' },
     });
@@ -76,12 +76,12 @@ describe('Campaigns Integration', () => {
 
   it('rejects duplicate slug', async () => {
     await app.inject({
-      method: 'POST', url: '/api/campaigns',
+      method: 'POST', url: '/campaigns',
       cookies: { meteorico_session: sessionCookie },
       payload: { name: 'A', slug: 'dup-slug' },
     });
     const res = await app.inject({
-      method: 'POST', url: '/api/campaigns',
+      method: 'POST', url: '/campaigns',
       cookies: { meteorico_session: sessionCookie },
       payload: { name: 'B', slug: 'dup-slug' },
     });
@@ -90,35 +90,35 @@ describe('Campaigns Integration', () => {
   });
 
   it('lists campaigns with status filter', async () => {
-    await app.inject({ method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'D1', slug: 'd1' } });
-    await app.inject({ method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'D2', slug: 'd2' } });
+    await app.inject({ method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'D1', slug: 'd1' } });
+    await app.inject({ method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'D2', slug: 'd2' } });
 
-    const allRes = await app.inject({ method: 'GET', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie } });
+    const allRes = await app.inject({ method: 'GET', url: '/campaigns', cookies: { meteorico_session: sessionCookie } });
     expect(JSON.parse(allRes.body).total).toBe(2);
 
-    const draftRes = await app.inject({ method: 'GET', url: '/api/campaigns?status=draft', cookies: { meteorico_session: sessionCookie } });
+    const draftRes = await app.inject({ method: 'GET', url: '/campaigns?status=draft', cookies: { meteorico_session: sessionCookie } });
     expect(JSON.parse(draftRes.body).total).toBe(2);
 
-    const activeRes = await app.inject({ method: 'GET', url: '/api/campaigns?status=active', cookies: { meteorico_session: sessionCookie } });
+    const activeRes = await app.inject({ method: 'GET', url: '/campaigns?status=active', cookies: { meteorico_session: sessionCookie } });
     expect(JSON.parse(activeRes.body).total).toBe(0);
     await app.close();
   });
 
   it('lists campaigns with search', async () => {
-    await app.inject({ method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Alpha Launch', slug: 'alpha' } });
-    await app.inject({ method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Beta Launch', slug: 'beta' } });
+    await app.inject({ method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Alpha Launch', slug: 'alpha' } });
+    await app.inject({ method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Beta Launch', slug: 'beta' } });
 
-    const res = await app.inject({ method: 'GET', url: '/api/campaigns?search=Alpha', cookies: { meteorico_session: sessionCookie } });
+    const res = await app.inject({ method: 'GET', url: '/campaigns?search=Alpha', cookies: { meteorico_session: sessionCookie } });
     expect(JSON.parse(res.body).total).toBe(1);
     await app.close();
   });
 
   it('updates a draft campaign', async () => {
-    const createRes = await app.inject({ method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Old', slug: 'old' } });
+    const createRes = await app.inject({ method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Old', slug: 'old' } });
     const id = JSON.parse(createRes.body).id;
 
     const res = await app.inject({
-      method: 'PUT', url: `/api/campaigns/${id}`,
+      method: 'PUT', url: `/campaigns/${id}`,
       cookies: { meteorico_session: sessionCookie },
       payload: { name: 'New Name' },
     });
@@ -128,35 +128,35 @@ describe('Campaigns Integration', () => {
   });
 
   it('deletes a draft campaign', async () => {
-    const createRes = await app.inject({ method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Del', slug: 'del' } });
+    const createRes = await app.inject({ method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Del', slug: 'del' } });
     const id = JSON.parse(createRes.body).id;
 
-    const res = await app.inject({ method: 'DELETE', url: `/api/campaigns/${id}`, cookies: { meteorico_session: sessionCookie } });
+    const res = await app.inject({ method: 'DELETE', url: `/campaigns/${id}`, cookies: { meteorico_session: sessionCookie } });
     expect(res.statusCode).toBe(200);
     await app.close();
   });
 
   it('cannot delete non-draft campaign', async () => {
-    const createRes = await app.inject({ method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Nd', slug: 'nd', startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 86400000).toISOString() } });
+    const createRes = await app.inject({ method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Nd', slug: 'nd', startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 86400000).toISOString() } });
     const id = JSON.parse(createRes.body).id;
 
-    await app.inject({ method: 'POST', url: '/api/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: id, name: 'G1', category: 'novo' } });
-    await app.inject({ method: 'POST', url: `/api/campaigns/${id}/activate`, cookies: { meteorico_session: sessionCookie } });
+    await app.inject({ method: 'POST', url: '/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: id, name: 'G1', category: 'novo' } });
+    await app.inject({ method: 'POST', url: `/campaigns/${id}/activate`, cookies: { meteorico_session: sessionCookie } });
 
-    const res = await app.inject({ method: 'DELETE', url: `/api/campaigns/${id}`, cookies: { meteorico_session: sessionCookie } });
+    const res = await app.inject({ method: 'DELETE', url: `/campaigns/${id}`, cookies: { meteorico_session: sessionCookie } });
     expect(res.statusCode).toBe(400);
     await app.close();
   });
 
   it('activates a campaign with groups and dates', async () => {
     const createRes = await app.inject({
-      method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie },
+      method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie },
       payload: { name: 'Act', slug: 'act', startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 86400000).toISOString() },
     });
     const id = JSON.parse(createRes.body).id;
 
-    await app.inject({ method: 'POST', url: '/api/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: id, name: 'G', category: 'novo' } });
-    const res = await app.inject({ method: 'POST', url: `/api/campaigns/${id}/activate`, cookies: { meteorico_session: sessionCookie } });
+    await app.inject({ method: 'POST', url: '/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: id, name: 'G', category: 'novo' } });
+    const res = await app.inject({ method: 'POST', url: `/campaigns/${id}/activate`, cookies: { meteorico_session: sessionCookie } });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body).status).toBe('active');
     await app.close();
@@ -164,61 +164,61 @@ describe('Campaigns Integration', () => {
 
   it('cannot activate without groups', async () => {
     const createRes = await app.inject({
-      method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie },
+      method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie },
       payload: { name: 'NoG', slug: 'nog', startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 86400000).toISOString() },
     });
     const id = JSON.parse(createRes.body).id;
 
-    const res = await app.inject({ method: 'POST', url: `/api/campaigns/${id}/activate`, cookies: { meteorico_session: sessionCookie } });
+    const res = await app.inject({ method: 'POST', url: `/campaigns/${id}/activate`, cookies: { meteorico_session: sessionCookie } });
     expect(res.statusCode).toBe(400);
     await app.close();
   });
 
   it('cannot activate without dates', async () => {
-    const createRes = await app.inject({ method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'NoD', slug: 'nod' } });
+    const createRes = await app.inject({ method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'NoD', slug: 'nod' } });
     const id = JSON.parse(createRes.body).id;
-    await app.inject({ method: 'POST', url: '/api/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: id, name: 'G', category: 'novo' } });
+    await app.inject({ method: 'POST', url: '/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: id, name: 'G', category: 'novo' } });
 
-    const res = await app.inject({ method: 'POST', url: `/api/campaigns/${id}/activate`, cookies: { meteorico_session: sessionCookie } });
+    const res = await app.inject({ method: 'POST', url: `/campaigns/${id}/activate`, cookies: { meteorico_session: sessionCookie } });
     expect(res.statusCode).toBe(400);
     await app.close();
   });
 
   it('cannot have two active campaigns', async () => {
-    const c1Res = await app.inject({ method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'C1', slug: 'c1', startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 86400000).toISOString() } });
+    const c1Res = await app.inject({ method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'C1', slug: 'c1', startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 86400000).toISOString() } });
     const c1Id = JSON.parse(c1Res.body).id;
-    await app.inject({ method: 'POST', url: '/api/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: c1Id, name: 'G1', category: 'novo' } });
-    await app.inject({ method: 'POST', url: `/api/campaigns/${c1Id}/activate`, cookies: { meteorico_session: sessionCookie } });
+    await app.inject({ method: 'POST', url: '/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: c1Id, name: 'G1', category: 'novo' } });
+    await app.inject({ method: 'POST', url: `/campaigns/${c1Id}/activate`, cookies: { meteorico_session: sessionCookie } });
 
-    const c2Res = await app.inject({ method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'C2', slug: 'c2', startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 86400000).toISOString() } });
+    const c2Res = await app.inject({ method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'C2', slug: 'c2', startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 86400000).toISOString() } });
     const c2Id = JSON.parse(c2Res.body).id;
-    await app.inject({ method: 'POST', url: '/api/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: c2Id, name: 'G2', category: 'novo' } });
+    await app.inject({ method: 'POST', url: '/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: c2Id, name: 'G2', category: 'novo' } });
 
-    const res = await app.inject({ method: 'POST', url: `/api/campaigns/${c2Id}/activate`, cookies: { meteorico_session: sessionCookie } });
+    const res = await app.inject({ method: 'POST', url: `/campaigns/${c2Id}/activate`, cookies: { meteorico_session: sessionCookie } });
     expect(res.statusCode).toBe(409);
     await app.close();
   });
 
   it('completes an active campaign', async () => {
-    const createRes = await app.inject({ method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Comp', slug: 'comp', startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 86400000).toISOString() } });
+    const createRes = await app.inject({ method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Comp', slug: 'comp', startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 86400000).toISOString() } });
     const id = JSON.parse(createRes.body).id;
-    await app.inject({ method: 'POST', url: '/api/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: id, name: 'G', category: 'novo' } });
-    await app.inject({ method: 'POST', url: `/api/campaigns/${id}/activate`, cookies: { meteorico_session: sessionCookie } });
+    await app.inject({ method: 'POST', url: '/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: id, name: 'G', category: 'novo' } });
+    await app.inject({ method: 'POST', url: `/campaigns/${id}/activate`, cookies: { meteorico_session: sessionCookie } });
 
-    const res = await app.inject({ method: 'POST', url: `/api/campaigns/${id}/complete`, cookies: { meteorico_session: sessionCookie } });
+    const res = await app.inject({ method: 'POST', url: `/campaigns/${id}/complete`, cookies: { meteorico_session: sessionCookie } });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body).status).toBe('completed');
     await app.close();
   });
 
   it('archives a completed campaign', async () => {
-    const createRes = await app.inject({ method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Arch', slug: 'arch', startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 86400000).toISOString() } });
+    const createRes = await app.inject({ method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Arch', slug: 'arch', startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 86400000).toISOString() } });
     const id = JSON.parse(createRes.body).id;
-    await app.inject({ method: 'POST', url: '/api/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: id, name: 'G', category: 'novo' } });
-    await app.inject({ method: 'POST', url: `/api/campaigns/${id}/activate`, cookies: { meteorico_session: sessionCookie } });
-    await app.inject({ method: 'POST', url: `/api/campaigns/${id}/complete`, cookies: { meteorico_session: sessionCookie } });
+    await app.inject({ method: 'POST', url: '/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: id, name: 'G', category: 'novo' } });
+    await app.inject({ method: 'POST', url: `/campaigns/${id}/activate`, cookies: { meteorico_session: sessionCookie } });
+    await app.inject({ method: 'POST', url: `/campaigns/${id}/complete`, cookies: { meteorico_session: sessionCookie } });
 
-    const res = await app.inject({ method: 'POST', url: `/api/campaigns/${id}/archive`, cookies: { meteorico_session: sessionCookie } });
+    const res = await app.inject({ method: 'POST', url: `/campaigns/${id}/archive`, cookies: { meteorico_session: sessionCookie } });
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body).status).toBe('archived');
     await app.close();
@@ -226,13 +226,13 @@ describe('Campaigns Integration', () => {
 
   it('duplicates campaign with groups and shifted dates', async () => {
     const createRes = await app.inject({
-      method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie },
+      method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie },
       payload: { name: 'Original', slug: 'original', editionNumber: 10, startsAt: '2026-01-01T00:00:00.000Z', endsAt: '2026-01-07T00:00:00.000Z' },
     });
     const id = JSON.parse(createRes.body).id;
-    await app.inject({ method: 'POST', url: '/api/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: id, name: 'G-Orig', category: 'veterano', capacity: 100 } });
+    await app.inject({ method: 'POST', url: '/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: id, name: 'G-Orig', category: 'veterano', capacity: 100 } });
 
-    const res = await app.inject({ method: 'POST', url: `/api/campaigns/${id}/duplicate`, cookies: { meteorico_session: sessionCookie }, payload: {} });
+    const res = await app.inject({ method: 'POST', url: `/campaigns/${id}/duplicate`, cookies: { meteorico_session: sessionCookie }, payload: {} });
     expect(res.statusCode).toBe(201);
     const dup = JSON.parse(res.body);
     expect(dup.status).toBe('draft');
@@ -247,36 +247,36 @@ describe('Campaigns Integration', () => {
   });
 
   it('publishes and lists versions', async () => {
-    const createRes = await app.inject({ method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Ver', slug: 'ver' } });
+    const createRes = await app.inject({ method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'Ver', slug: 'ver' } });
     const id = JSON.parse(createRes.body).id;
 
     const pubRes = await app.inject({
-      method: 'POST', url: `/api/campaigns/${id}/versions`,
+      method: 'POST', url: `/campaigns/${id}/versions`,
       cookies: { meteorico_session: sessionCookie },
       payload: { config: { key: 'value' } },
     });
     expect(pubRes.statusCode).toBe(201);
     expect(JSON.parse(pubRes.body).version).toBe(1);
 
-    const listRes = await app.inject({ method: 'GET', url: `/api/campaigns/${id}/versions`, cookies: { meteorico_session: sessionCookie } });
+    const listRes = await app.inject({ method: 'GET', url: `/campaigns/${id}/versions`, cookies: { meteorico_session: sessionCookie } });
     expect(JSON.parse(listRes.body)).toHaveLength(1);
     await app.close();
   });
 
   it('unauthenticated request returns 401', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/campaigns' });
+    const res = await app.inject({ method: 'GET', url: '/campaigns' });
     expect(res.statusCode).toBe(401);
     await app.close();
   });
 
   it('cannot update completed campaign', async () => {
-    const createRes = await app.inject({ method: 'POST', url: '/api/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'NoUp', slug: 'noup', startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 86400000).toISOString() } });
+    const createRes = await app.inject({ method: 'POST', url: '/campaigns', cookies: { meteorico_session: sessionCookie }, payload: { name: 'NoUp', slug: 'noup', startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 86400000).toISOString() } });
     const id = JSON.parse(createRes.body).id;
-    await app.inject({ method: 'POST', url: '/api/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: id, name: 'G', category: 'novo' } });
-    await app.inject({ method: 'POST', url: `/api/campaigns/${id}/activate`, cookies: { meteorico_session: sessionCookie } });
-    await app.inject({ method: 'POST', url: `/api/campaigns/${id}/complete`, cookies: { meteorico_session: sessionCookie } });
+    await app.inject({ method: 'POST', url: '/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId: id, name: 'G', category: 'novo' } });
+    await app.inject({ method: 'POST', url: `/campaigns/${id}/activate`, cookies: { meteorico_session: sessionCookie } });
+    await app.inject({ method: 'POST', url: `/campaigns/${id}/complete`, cookies: { meteorico_session: sessionCookie } });
 
-    const res = await app.inject({ method: 'PUT', url: `/api/campaigns/${id}`, cookies: { meteorico_session: sessionCookie }, payload: { name: 'Changed' } });
+    const res = await app.inject({ method: 'PUT', url: `/campaigns/${id}`, cookies: { meteorico_session: sessionCookie }, payload: { name: 'Changed' } });
     expect(res.statusCode).toBe(400);
     await app.close();
   });

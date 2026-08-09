@@ -109,7 +109,7 @@ describe('E2E Scenarios', () => {
     const contact = await db.contact.create({ data: { phone: '5511999990200', name: 'Lead Novo' } });
 
     const res = await app.inject({
-      method: 'POST', url: '/api/classification/classify',
+      method: 'POST', url: '/classification/classify',
       headers: { cookie: ownerCookie },
       payload: { contactId: contact.id, campaignId: campaign.id },
     });
@@ -125,7 +125,7 @@ describe('E2E Scenarios', () => {
     await db.campaignParticipation.create({ data: { contactId: contact.id, campaignId: c1.id, status: 'completed', classification: 'novo' } });
 
     const res = await app.inject({
-      method: 'POST', url: '/api/classification/classify',
+      method: 'POST', url: '/classification/classify',
       headers: { cookie: ownerCookie },
       payload: { contactId: contact.id, campaignId: c2.id },
     });
@@ -143,7 +143,7 @@ describe('E2E Scenarios', () => {
     await db.campaignParticipation.create({ data: { contactId: contact.id, campaignId: c2.id, status: 'completed', classification: 'reparticipante' } });
 
     const classRes = await app.inject({
-      method: 'POST', url: '/api/classification/classify',
+      method: 'POST', url: '/classification/classify',
       headers: { cookie: ownerCookie },
       payload: { contactId: contact.id, campaignId: c3.id },
     });
@@ -154,7 +154,7 @@ describe('E2E Scenarios', () => {
     });
 
     const diagRes = await app.inject({
-      method: 'POST', url: '/api/diagnosis/run',
+      method: 'POST', url: '/diagnosis/run',
       headers: { cookie: ownerCookie },
       payload: { contactId: contact.id, participationId: participation!.id, campaignId: c3.id },
     });
@@ -168,7 +168,7 @@ describe('E2E Scenarios', () => {
     const contact = await db.contact.create({ data: { phone: '5511999990203', name: 'Student', isStudent: true } });
 
     const res = await app.inject({
-      method: 'POST', url: '/api/classification/classify',
+      method: 'POST', url: '/classification/classify',
       headers: { cookie: ownerCookie },
       payload: { contactId: contact.id, campaignId: campaign.id },
     });
@@ -181,12 +181,12 @@ describe('E2E Scenarios', () => {
     const contact = await db.contact.create({ data: { phone: '5511999990204', name: 'Clicker' } });
 
     const res1 = await app.inject({
-      method: 'POST', url: '/api/classification/classify',
+      method: 'POST', url: '/classification/classify',
       headers: { cookie: ownerCookie },
       payload: { contactId: contact.id, campaignId: campaign.id },
     });
     const res2 = await app.inject({
-      method: 'POST', url: '/api/classification/classify',
+      method: 'POST', url: '/classification/classify',
       headers: { cookie: ownerCookie },
       payload: { contactId: contact.id, campaignId: campaign.id },
     });
@@ -200,7 +200,7 @@ describe('E2E Scenarios', () => {
     const contact = await db.contact.create({ data: { phone: '5511999990205', name: 'Overflow' } });
 
     const res = await app.inject({
-      method: 'POST', url: '/api/classification/classify',
+      method: 'POST', url: '/classification/classify',
       headers: { cookie: ownerCookie },
       payload: { contactId: contact.id, campaignId: campaign.id },
     });
@@ -234,7 +234,7 @@ describe('E2E Scenarios', () => {
     });
 
     const res = await app.inject({
-      method: 'POST', url: '/api/diagnosis/run',
+      method: 'POST', url: '/diagnosis/run',
       headers: { cookie: ownerCookie },
       payload: { contactId: contact.id, participationId: participation.id, campaignId: campaign.id },
     });
@@ -250,7 +250,7 @@ describe('E2E Scenarios', () => {
     await db.contactPreference.create({ data: { contactId: contact.id, channel: 'whatsapp', optedOut: true } });
 
     const res = await app.inject({
-      method: 'POST', url: '/api/classification/classify',
+      method: 'POST', url: '/classification/classify',
       headers: { cookie: ownerCookie },
       payload: { contactId: contact.id, campaignId: campaign.id },
     });
@@ -288,7 +288,7 @@ describe('E2E Scenarios', () => {
     });
 
     const res = await app.inject({
-      method: 'GET', url: '/api/analytics/dashboard',
+      method: 'GET', url: '/analytics/dashboard',
       headers: { cookie: ownerCookie },
     });
     const m = res.json().metrics;
@@ -312,14 +312,14 @@ describe('E2E Scenarios', () => {
     const roCookie = `meteorico_session=${roCookies.find((c) => c.name === 'meteorico_session')!.value}`;
 
     const createRes = await app.inject({
-      method: 'POST', url: '/api/campaigns',
+      method: 'POST', url: '/campaigns',
       headers: { cookie: roCookie },
       payload: { name: 'Blocked', slug: 'blocked' },
     });
     expect(createRes.statusCode).toBe(403);
 
     const classifyRes = await app.inject({
-      method: 'POST', url: '/api/classification/classify',
+      method: 'POST', url: '/classification/classify',
       headers: { cookie: roCookie },
       payload: { contactId: 'x', campaignId: 'y' },
     });
@@ -346,7 +346,7 @@ describe('E2E Scenarios', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/imports/preview',
+      url: '/imports/preview',
       headers: {
         cookie: ownerCookie,
         'content-type': `multipart/form-data; boundary=${boundary}`,

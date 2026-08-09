@@ -66,7 +66,7 @@ describe('Integration Health API', () => {
   it('returns empty health status when no data', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: '/api/integration/health',
+      url: '/integration/health',
       headers: { cookie: sessionCookie },
     });
 
@@ -99,7 +99,7 @@ describe('Integration Health API', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: '/api/integration/health',
+      url: '/integration/health',
       headers: { cookie: sessionCookie },
     });
 
@@ -121,7 +121,7 @@ describe('Integration Health API', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: '/api/integration/health',
+      url: '/integration/health',
       headers: { cookie: sessionCookie },
     });
 
@@ -148,7 +148,7 @@ describe('Integration Health API', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: '/api/integration/orphan-groups',
+      url: '/integration/orphan-groups',
       headers: { cookie: sessionCookie },
     });
 
@@ -179,7 +179,7 @@ describe('Integration Health API', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: `/api/integration/orphan-groups/${orphanGroup.id}/assign`,
+      url: `/integration/orphan-groups/${orphanGroup.id}/assign`,
       headers: { cookie: sessionCookie },
       payload: { campaignId: realCampaign.id },
     });
@@ -193,7 +193,7 @@ describe('Integration Health API', () => {
   it('requires authentication', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: '/api/integration/health',
+      url: '/integration/health',
     });
 
     expect(res.statusCode).toBe(401);

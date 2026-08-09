@@ -90,7 +90,7 @@ describe('Analytics & Eduzz Integration', () => {
   it('returns global dashboard with zero metrics', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: '/api/analytics/dashboard',
+      url: '/analytics/dashboard',
       headers: { cookie: sessionCookie },
     });
     expect(res.statusCode).toBe(200);
@@ -125,7 +125,7 @@ describe('Analytics & Eduzz Integration', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: '/api/analytics/dashboard',
+      url: '/analytics/dashboard',
       headers: { cookie: sessionCookie },
     });
     const body = res.json();
@@ -149,7 +149,7 @@ describe('Analytics & Eduzz Integration', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: `/api/analytics/campaigns/${campaign.id}`,
+      url: `/analytics/campaigns/${campaign.id}`,
       headers: { cookie: sessionCookie },
     });
     expect(res.statusCode).toBe(200);
@@ -170,7 +170,7 @@ describe('Analytics & Eduzz Integration', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: `/api/analytics/groups/${group.id}`,
+      url: `/analytics/groups/${group.id}`,
       headers: { cookie: sessionCookie },
     });
     expect(res.statusCode).toBe(200);
@@ -186,7 +186,7 @@ describe('Analytics & Eduzz Integration', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: `/api/analytics/contacts/${contact.id}/timeline`,
+      url: `/analytics/contacts/${contact.id}/timeline`,
       headers: { cookie: sessionCookie },
     });
     expect(res.statusCode).toBe(200);
@@ -204,7 +204,7 @@ describe('Analytics & Eduzz Integration', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/analytics/compare',
+      url: '/analytics/compare',
       headers: { cookie: sessionCookie },
       payload: { campaignIds: [c1.id, c2.id] },
     });
@@ -226,7 +226,7 @@ describe('Analytics & Eduzz Integration', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: `/api/analytics/campaigns/${campaign.id}/export`,
+      url: `/analytics/campaigns/${campaign.id}/export`,
       headers: { cookie: sessionCookie },
     });
     expect(res.statusCode).toBe(200);
@@ -240,7 +240,7 @@ describe('Analytics & Eduzz Integration', () => {
   it('returns metric definitions dictionary', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: '/api/analytics/metrics',
+      url: '/analytics/metrics',
       headers: { cookie: sessionCookie },
     });
     expect(res.statusCode).toBe(200);
@@ -355,7 +355,7 @@ describe('Analytics & Eduzz Integration', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: '/api/analytics/dashboard',
+      url: '/analytics/dashboard',
       headers: { cookie: sessionCookie },
     });
     const body = res.json();
@@ -375,7 +375,7 @@ describe('Analytics & Eduzz Integration', () => {
 
     const res = await app.inject({
       method: 'GET',
-      url: '/api/analytics/dashboard?from=2026-01-01&to=2026-12-31',
+      url: '/analytics/dashboard?from=2026-01-01&to=2026-12-31',
       headers: { cookie: sessionCookie },
     });
     const body = res.json();
@@ -385,8 +385,8 @@ describe('Analytics & Eduzz Integration', () => {
 
   it('requires auth on analytics endpoints', async () => {
     const endpoints = [
-      { method: 'GET' as const, url: '/api/analytics/dashboard' },
-      { method: 'GET' as const, url: '/api/analytics/metrics' },
+      { method: 'GET' as const, url: '/analytics/dashboard' },
+      { method: 'GET' as const, url: '/analytics/metrics' },
     ];
     for (const ep of endpoints) {
       const res = await app.inject(ep);
@@ -403,21 +403,21 @@ describe('Analytics & Eduzz Integration', () => {
 
     const res1 = await app.inject({
       method: 'GET',
-      url: `/api/analytics/campaigns/${c1.id}`,
+      url: `/analytics/campaigns/${c1.id}`,
       headers: { cookie: sessionCookie },
     });
     expect(res1.json().metrics.total_participations).toBe(1);
 
     const res2 = await app.inject({
       method: 'GET',
-      url: `/api/analytics/campaigns/${c2.id}`,
+      url: `/analytics/campaigns/${c2.id}`,
       headers: { cookie: sessionCookie },
     });
     expect(res2.json().metrics.total_participations).toBe(1);
 
     const globalRes = await app.inject({
       method: 'GET',
-      url: '/api/analytics/dashboard',
+      url: '/analytics/dashboard',
       headers: { cookie: sessionCookie },
     });
     expect(globalRes.json().metrics.total_contacts).toBe(1);

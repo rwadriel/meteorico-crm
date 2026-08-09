@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { getClient } from '@meteorico/database';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
-import { createRedirectLink, listRedirectLinks, deactivateRedirectLink } from '../services/redirect.js';
+import { createRedirectLink, listRedirectLinks, getRedirectLink, deactivateRedirectLink, activateRedirectLink } from '../services/redirect.js';
 import { optOutContact, optInContact, attributeConversation } from '../services/conversation.js';
 import { writeAuditLog } from '../services/audit.js';
 
@@ -17,6 +17,17 @@ export async function messagingRoutes(app: FastifyInstance) {
     return reply.send({ links });
   });
 
+  app.get<{
+    Params: { id: string };
+  }>('/messaging/redirect-links/:id', {
+    preHandler: requirePermission('messages', 'read'),
+  }, async (request, reply) => {
+    const db = getClient();
+    const link = await getRedirectLink(db, request.params.id);
+    if (!link) return reply.status(404).send({ error: 'Link not found' });
+    return reply.send(link);
+  });
+
   app.post<{
     Body: {
       campaignId: string;
@@ -26,6 +37,11 @@ export async function messagingRoutes(app: FastifyInstance) {
       utmCampaign?: string;
       utmContent?: string;
       fbclid?: string;
+      metaCampaignId?: string;
+      metaAdsetId?: string;
+      metaAdId?: string;
+      creativeId?: string;
+      placement?: string;
       maxUses?: number;
       expiresAt?: string;
     };
@@ -63,6 +79,25 @@ export async function messagingRoutes(app: FastifyInstance) {
     await writeAuditLog(db, {
       userId: request.user!.id,
       action: 'deactivate_redirect_link',
+      resource: 'messages',
+      resourceId: link.id,
+      ipAddress: request.ip,
+    });
+
+    return reply.send(link);
+  });
+
+  app.post<{
+    Params: { id: string };
+  }>('/messaging/redirect-links/:id/activate', {
+    preHandler: requirePermission('messages', 'update'),
+  }, async (request, reply) => {
+    const db = getClient();
+    const link = await activateRedirectLink(db, request.params.id);
+
+    await writeAuditLog(db, {
+      userId: request.user!.id,
+      action: 'activate_redirect_link',
       resource: 'messages',
       resourceId: link.id,
       ipAddress: request.ip,

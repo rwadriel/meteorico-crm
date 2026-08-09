@@ -37,6 +37,11 @@ export async function createRedirectLink(
     utmCampaign?: string;
     utmContent?: string;
     fbclid?: string;
+    metaCampaignId?: string;
+    metaAdsetId?: string;
+    metaAdId?: string;
+    creativeId?: string;
+    placement?: string;
     maxUses?: number;
     expiresAt?: Date;
     createdBy: string;
@@ -74,6 +79,11 @@ export async function createRedirectLink(
       utmCampaign: data.utmCampaign ?? '',
       utmContent: data.utmContent ?? '',
       fbclid: data.fbclid ?? '',
+      metaCampaignId: data.metaCampaignId ?? null,
+      metaAdsetId: data.metaAdsetId ?? null,
+      metaAdId: data.metaAdId ?? null,
+      creativeId: data.creativeId ?? null,
+      placement: data.placement ?? null,
       maxUses: data.maxUses ?? null,
       expiresAt: data.expiresAt ?? null,
       createdBy: data.createdBy,
@@ -107,6 +117,7 @@ export async function resolveRedirectLink(
 
   await db.trackingClick.create({
     data: {
+      linkId: link.id,
       url: link.destinationUrl,
       referer: visitorInfo.referer,
       ipAddress: visitorInfo.ipAddress,
@@ -124,7 +135,23 @@ export async function listRedirectLinks(
   return db.redirectLink.findMany({
     where: campaignId ? { campaignId } : {},
     orderBy: { createdAt: 'desc' },
-    include: { campaign: { select: { name: true, slug: true } } },
+    include: {
+      campaign: { select: { name: true, slug: true } },
+      _count: { select: { clicks: true } },
+    },
+  });
+}
+
+export async function getRedirectLink(
+  db: PrismaClient,
+  id: string,
+) {
+  return db.redirectLink.findUnique({
+    where: { id },
+    include: {
+      campaign: { select: { name: true, slug: true } },
+      _count: { select: { clicks: true } },
+    },
   });
 }
 
@@ -135,5 +162,15 @@ export async function deactivateRedirectLink(
   return db.redirectLink.update({
     where: { id },
     data: { isActive: false },
+  });
+}
+
+export async function activateRedirectLink(
+  db: PrismaClient,
+  id: string,
+) {
+  return db.redirectLink.update({
+    where: { id },
+    data: { isActive: true },
   });
 }

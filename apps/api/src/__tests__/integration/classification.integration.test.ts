@@ -86,7 +86,7 @@ describe('Classification Integration', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/classification/classify',
+      url: '/classification/classify',
       headers: { cookie: sessionCookie },
       payload: { contactId: contact.id, campaignId: campaign.id },
     });
@@ -117,7 +117,7 @@ describe('Classification Integration', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/classification/classify',
+      url: '/classification/classify',
       headers: { cookie: sessionCookie },
       payload: { contactId: contact.id, campaignId: newCampaign.id },
     });
@@ -137,7 +137,7 @@ describe('Classification Integration', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/classification/classify',
+      url: '/classification/classify',
       headers: { cookie: sessionCookie },
       payload: { contactId: contact.id, campaignId: current.id },
     });
@@ -155,7 +155,7 @@ describe('Classification Integration', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/classification/classify',
+      url: '/classification/classify',
       headers: { cookie: sessionCookie },
       payload: { contactId: contact.id, campaignId: current.id },
     });
@@ -170,7 +170,7 @@ describe('Classification Integration', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/classification/classify',
+      url: '/classification/classify',
       headers: { cookie: sessionCookie },
       payload: { contactId: contact.id, campaignId: campaign.id },
     });
@@ -187,7 +187,7 @@ describe('Classification Integration', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/classification/classify',
+      url: '/classification/classify',
       headers: { cookie: sessionCookie },
       payload: { contactId: contact.id, campaignId: campaign.id },
     });
@@ -201,7 +201,7 @@ describe('Classification Integration', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/classification/simulate',
+      url: '/classification/simulate',
       headers: { cookie: sessionCookie },
       payload: { contactId: contact.id, campaignId: campaign.id },
     });
@@ -225,7 +225,7 @@ describe('Classification Integration', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/classification/override',
+      url: '/classification/override',
       headers: { cookie: sessionCookie },
       payload: { contactId: contact.id, campaignId: campaign.id, classification: 'veterano' },
     });
@@ -248,7 +248,7 @@ describe('Classification Integration', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/classification/classify',
+      url: '/classification/classify',
       headers: { cookie: sessionCookie },
       payload: { contactId: contact.id, campaignId: campaign.id },
     });
@@ -265,7 +265,7 @@ describe('Classification Integration', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/classification/classify',
+      url: '/classification/classify',
       headers: { cookie: sessionCookie },
       payload: { contactId: contact.id, campaignId: campaign.id },
     });
@@ -281,7 +281,7 @@ describe('Classification Integration', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/classification/classify',
+      url: '/classification/classify',
       headers: { cookie: sessionCookie },
       payload: { contactId: contact.id, campaignId: campaign.id },
     });
@@ -295,7 +295,7 @@ describe('Classification Integration', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/classification/override',
+      url: '/classification/override',
       headers: { cookie: sessionCookie },
       payload: { contactId: contact.id, campaignId: campaign.id, classification: 'invalid' },
     });
@@ -306,7 +306,7 @@ describe('Classification Integration', () => {
   it('requires auth', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/api/classification/classify',
+      url: '/classification/classify',
       payload: { contactId: 'x', campaignId: 'y' },
     });
     expect(res.statusCode).toBe(401);

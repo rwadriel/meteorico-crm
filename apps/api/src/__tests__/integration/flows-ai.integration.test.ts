@@ -125,7 +125,7 @@ describe('Flows & AI Integration', () => {
   it('creates template via API and versions it', async () => {
     const createRes = await app.inject({
       method: 'POST',
-      url: '/api/templates',
+      url: '/templates',
       headers: { cookie: sessionCookie },
       payload: { name: 'Boas vindas', category: 'onboarding', content: 'Ola {{nome}}, bem-vindo!' },
     });
@@ -135,7 +135,7 @@ describe('Flows & AI Integration', () => {
 
     const updateRes = await app.inject({
       method: 'PUT',
-      url: `/api/templates/${template.id}`,
+      url: `/templates/${template.id}`,
       headers: { cookie: sessionCookie },
       payload: { content: 'Ola {{nome}}, campanha {{campanha}} comecou!' },
     });
@@ -144,7 +144,7 @@ describe('Flows & AI Integration', () => {
 
     const getRes = await app.inject({
       method: 'GET',
-      url: `/api/templates/${template.id}`,
+      url: `/templates/${template.id}`,
       headers: { cookie: sessionCookie },
     });
     expect(getRes.json().versions).toHaveLength(2);
@@ -153,7 +153,7 @@ describe('Flows & AI Integration', () => {
   it('rejects template with unknown variable', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/api/templates',
+      url: '/templates',
       headers: { cookie: sessionCookie },
       payload: { name: 'Bad', category: 'test', content: 'Ola {{invalida}}' },
     });
@@ -163,7 +163,7 @@ describe('Flows & AI Integration', () => {
   it('previews template rendering', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/api/templates/preview',
+      url: '/templates/preview',
       headers: { cookie: sessionCookie },
       payload: {
         content: 'Ola {{nome}}, grupo {{grupo}}',
@@ -180,7 +180,7 @@ describe('Flows & AI Integration', () => {
   it('creates flow with steps and publishes', async () => {
     const flowRes = await app.inject({
       method: 'POST',
-      url: '/api/flows',
+      url: '/flows',
       headers: { cookie: sessionCookie },
       payload: { name: 'Onboarding', description: 'Fluxo de boas vindas', trigger: 'on_join' },
     });
@@ -190,7 +190,7 @@ describe('Flows & AI Integration', () => {
 
     const stepRes = await app.inject({
       method: 'POST',
-      url: `/api/flows/versions/${versionId}/steps`,
+      url: `/flows/versions/${versionId}/steps`,
       headers: { cookie: sessionCookie },
       payload: {
         stepType: 'message',
@@ -202,7 +202,7 @@ describe('Flows & AI Integration', () => {
 
     const publishRes = await app.inject({
       method: 'POST',
-      url: `/api/flows/${flow.id}/publish`,
+      url: `/flows/${flow.id}/publish`,
       headers: { cookie: sessionCookie },
     });
     expect(publishRes.statusCode).toBe(200);
@@ -212,7 +212,7 @@ describe('Flows & AI Integration', () => {
   it('rejects invalid trigger', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/api/flows',
+      url: '/flows',
       headers: { cookie: sessionCookie },
       payload: { name: 'Bad', description: '', trigger: 'eval_code' },
     });
@@ -222,7 +222,7 @@ describe('Flows & AI Integration', () => {
   it('creates flow with buttons and numbered fallback', async () => {
     const flowRes = await app.inject({
       method: 'POST',
-      url: '/api/flows',
+      url: '/flows',
       headers: { cookie: sessionCookie },
       payload: { name: 'Choice', description: 'Escolha', trigger: 'on_message' },
     });
@@ -231,7 +231,7 @@ describe('Flows & AI Integration', () => {
 
     const stepRes = await app.inject({
       method: 'POST',
-      url: `/api/flows/versions/${versionId}/steps`,
+      url: `/flows/versions/${versionId}/steps`,
       headers: { cookie: sessionCookie },
       payload: {
         stepType: 'buttons',
@@ -273,7 +273,7 @@ describe('Flows & AI Integration', () => {
   it('rejects publishing empty flow', async () => {
     const flowRes = await app.inject({
       method: 'POST',
-      url: '/api/flows',
+      url: '/flows',
       headers: { cookie: sessionCookie },
       payload: { name: 'Empty', description: '', trigger: 'manual' },
     });
@@ -281,7 +281,7 @@ describe('Flows & AI Integration', () => {
 
     const publishRes = await app.inject({
       method: 'POST',
-      url: `/api/flows/${flow.id}/publish`,
+      url: `/flows/${flow.id}/publish`,
       headers: { cookie: sessionCookie },
     });
     expect(publishRes.statusCode).toBe(500);
@@ -292,7 +292,7 @@ describe('Flows & AI Integration', () => {
   it('CRUD knowledge documents', async () => {
     const createRes = await app.inject({
       method: 'POST',
-      url: '/api/knowledge',
+      url: '/knowledge',
       headers: { cookie: sessionCookie },
       payload: { title: 'FAQ', content: 'Pergunta: O que e?\nResposta: Um CRM.', category: 'faq' },
     });
@@ -301,7 +301,7 @@ describe('Flows & AI Integration', () => {
 
     const updateRes = await app.inject({
       method: 'PUT',
-      url: `/api/knowledge/${doc.id}`,
+      url: `/knowledge/${doc.id}`,
       headers: { cookie: sessionCookie },
       payload: { content: 'Pergunta: O que e?\nResposta: Um CRM de lancamentos.' },
     });
@@ -309,14 +309,14 @@ describe('Flows & AI Integration', () => {
 
     const listRes = await app.inject({
       method: 'GET',
-      url: '/api/knowledge?category=faq',
+      url: '/knowledge?category=faq',
       headers: { cookie: sessionCookie },
     });
     expect(listRes.json()).toHaveLength(1);
 
     const deleteRes = await app.inject({
       method: 'DELETE',
-      url: `/api/knowledge/${doc.id}`,
+      url: `/knowledge/${doc.id}`,
       headers: { cookie: sessionCookie },
     });
     expect(deleteRes.statusCode).toBe(204);
@@ -346,7 +346,7 @@ describe('Flows & AI Integration', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/diagnosis/run',
+      url: '/diagnosis/run',
       headers: { cookie: sessionCookie },
       payload: { contactId: contact.id, participationId: participation.id, campaignId: campaign.id },
     });
@@ -367,7 +367,7 @@ describe('Flows & AI Integration', () => {
 
     const res = await app.inject({
       method: 'POST',
-      url: '/api/diagnosis/run',
+      url: '/diagnosis/run',
       headers: { cookie: sessionCookie },
       payload: { contactId: contact.id, participationId: participation.id, campaignId: campaign.id },
     });
@@ -382,7 +382,7 @@ describe('Flows & AI Integration', () => {
   it('playground does not persist diagnosis', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/api/diagnosis/playground',
+      url: '/diagnosis/playground',
       headers: { cookie: sessionCookie },
       payload: {
         classification: 'veterano',
@@ -401,7 +401,7 @@ describe('Flows & AI Integration', () => {
   it('playground rejects low participation count', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/api/diagnosis/playground',
+      url: '/diagnosis/playground',
       headers: { cookie: sessionCookie },
       payload: {
         classification: 'novo',
@@ -425,7 +425,7 @@ describe('Flows & AI Integration', () => {
 
     const createRes = await app.inject({
       method: 'POST',
-      url: '/api/handoffs',
+      url: '/handoffs',
       headers: { cookie: sessionCookie },
       payload: { conversationId: conversation.id, assignedTo: adminUserId, reason: 'Caso complexo' },
     });
@@ -438,7 +438,7 @@ describe('Flows & AI Integration', () => {
 
     const resolveRes = await app.inject({
       method: 'POST',
-      url: `/api/handoffs/${handoff.id}/resolve`,
+      url: `/handoffs/${handoff.id}/resolve`,
       headers: { cookie: sessionCookie },
     });
     expect(resolveRes.statusCode).toBe(200);
@@ -452,11 +452,11 @@ describe('Flows & AI Integration', () => {
 
   it('requires auth on all endpoints', async () => {
     const endpoints = [
-      { method: 'GET' as const, url: '/api/templates' },
-      { method: 'POST' as const, url: '/api/flows', payload: {} },
-      { method: 'GET' as const, url: '/api/knowledge' },
-      { method: 'POST' as const, url: '/api/diagnosis/run', payload: {} },
-      { method: 'GET' as const, url: '/api/handoffs' },
+      { method: 'GET' as const, url: '/templates' },
+      { method: 'POST' as const, url: '/flows', payload: {} },
+      { method: 'GET' as const, url: '/knowledge' },
+      { method: 'POST' as const, url: '/diagnosis/run', payload: {} },
+      { method: 'GET' as const, url: '/handoffs' },
     ];
 
     for (const ep of endpoints) {
@@ -477,7 +477,7 @@ describe('Flows & AI Integration', () => {
   it('creates new flow version copying steps', async () => {
     const flowRes = await app.inject({
       method: 'POST',
-      url: '/api/flows',
+      url: '/flows',
       headers: { cookie: sessionCookie },
       payload: { name: 'Versioned', description: 'Test versions', trigger: 'manual' },
     });
@@ -486,20 +486,20 @@ describe('Flows & AI Integration', () => {
 
     await app.inject({
       method: 'POST',
-      url: `/api/flows/versions/${v1Id}/steps`,
+      url: `/flows/versions/${v1Id}/steps`,
       headers: { cookie: sessionCookie },
       payload: { stepType: 'message', config: { content: 'V1 message' }, order: 1 },
     });
 
     await app.inject({
       method: 'POST',
-      url: `/api/flows/${flow.id}/publish`,
+      url: `/flows/${flow.id}/publish`,
       headers: { cookie: sessionCookie },
     });
 
     const v2Res = await app.inject({
       method: 'POST',
-      url: `/api/flows/${flow.id}/versions`,
+      url: `/flows/${flow.id}/versions`,
       headers: { cookie: sessionCookie },
     });
     expect(v2Res.statusCode).toBe(201);

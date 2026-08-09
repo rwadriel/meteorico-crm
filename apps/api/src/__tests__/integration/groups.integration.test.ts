@@ -61,7 +61,7 @@ describe('Groups Integration', () => {
     sessionCookie = cookies.find((c) => c.name === 'meteorico_session')!.value;
 
     const campRes = await app.inject({
-      method: 'POST', url: '/api/campaigns',
+      method: 'POST', url: '/campaigns',
       cookies: { meteorico_session: sessionCookie },
       payload: { name: 'Camp', slug: `camp-${crypto.randomUUID().slice(0, 8)}` },
     });
@@ -70,7 +70,7 @@ describe('Groups Integration', () => {
 
   it('creates a group', async () => {
     const res = await app.inject({
-      method: 'POST', url: '/api/groups',
+      method: 'POST', url: '/groups',
       cookies: { meteorico_session: sessionCookie },
       payload: { campaignId, name: 'Grupo Teste', category: 'novo' },
     });
@@ -86,7 +86,7 @@ describe('Groups Integration', () => {
     const categories = ['novo', 'reparticipante', 'veterano', 'aluno', 'geral'];
     for (const cat of categories) {
       const res = await app.inject({
-        method: 'POST', url: '/api/groups',
+        method: 'POST', url: '/groups',
         cookies: { meteorico_session: sessionCookie },
         payload: { campaignId, name: `G-${cat}`, category: cat },
       });
@@ -97,20 +97,20 @@ describe('Groups Integration', () => {
   });
 
   it('lists groups filtered by campaign', async () => {
-    await app.inject({ method: 'POST', url: '/api/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId, name: 'G1', category: 'novo' } });
-    await app.inject({ method: 'POST', url: '/api/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId, name: 'G2', category: 'veterano' } });
+    await app.inject({ method: 'POST', url: '/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId, name: 'G1', category: 'novo' } });
+    await app.inject({ method: 'POST', url: '/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId, name: 'G2', category: 'veterano' } });
 
-    const res = await app.inject({ method: 'GET', url: `/api/groups?campaignId=${campaignId}`, cookies: { meteorico_session: sessionCookie } });
+    const res = await app.inject({ method: 'GET', url: `/groups?campaignId=${campaignId}`, cookies: { meteorico_session: sessionCookie } });
     expect(JSON.parse(res.body).total).toBe(2);
     await app.close();
   });
 
   it('updates a group', async () => {
-    const createRes = await app.inject({ method: 'POST', url: '/api/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId, name: 'Old G', category: 'novo' } });
+    const createRes = await app.inject({ method: 'POST', url: '/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId, name: 'Old G', category: 'novo' } });
     const id = JSON.parse(createRes.body).id;
 
     const res = await app.inject({
-      method: 'PUT', url: `/api/groups/${id}`,
+      method: 'PUT', url: `/groups/${id}`,
       cookies: { meteorico_session: sessionCookie },
       payload: { name: 'New G', capacity: 100 },
     });
@@ -121,17 +121,17 @@ describe('Groups Integration', () => {
   });
 
   it('deletes a group without memberships', async () => {
-    const createRes = await app.inject({ method: 'POST', url: '/api/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId, name: 'Del G', category: 'geral' } });
+    const createRes = await app.inject({ method: 'POST', url: '/groups', cookies: { meteorico_session: sessionCookie }, payload: { campaignId, name: 'Del G', category: 'geral' } });
     const id = JSON.parse(createRes.body).id;
 
-    const res = await app.inject({ method: 'DELETE', url: `/api/groups/${id}`, cookies: { meteorico_session: sessionCookie } });
+    const res = await app.inject({ method: 'DELETE', url: `/groups/${id}`, cookies: { meteorico_session: sessionCookie } });
     expect(res.statusCode).toBe(200);
     await app.close();
   });
 
   it('cannot create group for non-existent campaign', async () => {
     const res = await app.inject({
-      method: 'POST', url: '/api/groups',
+      method: 'POST', url: '/groups',
       cookies: { meteorico_session: sessionCookie },
       payload: { campaignId: '00000000-0000-0000-0000-000000000000', name: 'X', category: 'novo' },
     });
@@ -140,7 +140,7 @@ describe('Groups Integration', () => {
   });
 
   it('unauthenticated request returns 401', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/groups' });
+    const res = await app.inject({ method: 'GET', url: '/groups' });
     expect(res.statusCode).toBe(401);
     await app.close();
   });

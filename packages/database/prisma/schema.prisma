@@ -302,6 +302,7 @@ model LeadAttribution {
 
 model TrackingClick {
   id        String   @id @default(uuid())
+  linkId    String?  @map("link_id")
   contactId String?  @map("contact_id")
   url       String
   referer   String   @default("")
@@ -309,8 +310,10 @@ model TrackingClick {
   userAgent String   @default("") @map("user_agent")
   createdAt DateTime @default(now()) @map("created_at")
 
-  contact Contact? @relation(fields: [contactId], references: [id])
+  link    RedirectLink? @relation(fields: [linkId], references: [id])
+  contact Contact?      @relation(fields: [contactId], references: [id])
 
+  @@index([linkId])
   @@map("tracking_clicks")
 }
 
@@ -391,24 +394,30 @@ model MessageTemplateVersion {
 // ─── Redirect Links ─────────────────────────────────────────────────
 
 model RedirectLink {
-  id            String    @id @default(uuid())
-  code          String    @unique
-  campaignId    String    @map("campaign_id")
-  destinationUrl String   @map("destination_url")
-  utmSource     String    @default("") @map("utm_source")
-  utmMedium     String    @default("") @map("utm_medium")
-  utmCampaign   String    @default("") @map("utm_campaign")
-  utmContent    String    @default("") @map("utm_content")
-  fbclid        String    @default("")
-  maxUses       Int?      @map("max_uses")
-  usedCount     Int       @default(0) @map("used_count")
-  expiresAt     DateTime? @map("expires_at")
-  isActive      Boolean   @default(true) @map("is_active")
-  createdBy     String    @map("created_by")
-  createdAt     DateTime  @default(now()) @map("created_at")
+  id              String    @id @default(uuid())
+  code            String    @unique
+  campaignId      String    @map("campaign_id")
+  destinationUrl  String    @map("destination_url")
+  utmSource       String    @default("") @map("utm_source")
+  utmMedium       String    @default("") @map("utm_medium")
+  utmCampaign     String    @default("") @map("utm_campaign")
+  utmContent      String    @default("") @map("utm_content")
+  fbclid          String    @default("")
+  metaCampaignId  String?   @map("meta_campaign_id")
+  metaAdsetId     String?   @map("meta_adset_id")
+  metaAdId        String?   @map("meta_ad_id")
+  creativeId      String?   @map("creative_id")
+  placement       String?
+  maxUses         Int?      @map("max_uses")
+  usedCount       Int       @default(0) @map("used_count")
+  expiresAt       DateTime? @map("expires_at")
+  isActive        Boolean   @default(true) @map("is_active")
+  createdBy       String    @map("created_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
 
-  campaign Campaign  @relation(fields: [campaignId], references: [id])
-  creator  AdminUser @relation(fields: [createdBy], references: [id])
+  campaign Campaign        @relation(fields: [campaignId], references: [id])
+  creator  AdminUser       @relation(fields: [createdBy], references: [id])
+  clicks   TrackingClick[]
 
   @@index([code])
   @@map("redirect_links")

@@ -83,7 +83,7 @@ describe('Messaging Integration', () => {
   it('creates a redirect link', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/api/messaging/redirect-links',
+      url: '/messaging/redirect-links',
       headers: { cookie: sessionCookie },
       payload: {
         campaignId,
@@ -103,7 +103,7 @@ describe('Messaging Integration', () => {
   it('rejects redirect link with disallowed destination', async () => {
     const res = await app.inject({
       method: 'POST',
-      url: '/api/messaging/redirect-links',
+      url: '/messaging/redirect-links',
       headers: { cookie: sessionCookie },
       payload: {
         campaignId,
@@ -117,7 +117,7 @@ describe('Messaging Integration', () => {
   it('resolves redirect link and tracks click', async () => {
     const createRes = await app.inject({
       method: 'POST',
-      url: '/api/messaging/redirect-links',
+      url: '/messaging/redirect-links',
       headers: { cookie: sessionCookie },
       payload: {
         campaignId,
@@ -279,7 +279,7 @@ describe('Messaging Integration', () => {
 
     const optOutRes = await app.inject({
       method: 'POST',
-      url: `/api/messaging/contacts/${contact.id}/opt-out`,
+      url: `/messaging/contacts/${contact.id}/opt-out`,
       headers: { cookie: sessionCookie },
     });
     expect(optOutRes.statusCode).toBe(200);
@@ -293,7 +293,7 @@ describe('Messaging Integration', () => {
   it('deactivates redirect link', async () => {
     const createRes = await app.inject({
       method: 'POST',
-      url: '/api/messaging/redirect-links',
+      url: '/messaging/redirect-links',
       headers: { cookie: sessionCookie },
       payload: {
         campaignId,
@@ -304,7 +304,7 @@ describe('Messaging Integration', () => {
 
     await app.inject({
       method: 'POST',
-      url: `/api/messaging/redirect-links/${id}/deactivate`,
+      url: `/messaging/redirect-links/${id}/deactivate`,
       headers: { cookie: sessionCookie },
     });
 
@@ -315,14 +315,14 @@ describe('Messaging Integration', () => {
   it('lists redirect links filtered by campaign', async () => {
     await app.inject({
       method: 'POST',
-      url: '/api/messaging/redirect-links',
+      url: '/messaging/redirect-links',
       headers: { cookie: sessionCookie },
       payload: { campaignId, destinationUrl: 'https://wa.me/5511999990001' },
     });
 
     const res = await app.inject({
       method: 'GET',
-      url: `/api/messaging/redirect-links?campaignId=${campaignId}`,
+      url: `/messaging/redirect-links?campaignId=${campaignId}`,
       headers: { cookie: sessionCookie },
     });
 
@@ -330,10 +330,142 @@ describe('Messaging Integration', () => {
     expect(res.json().links).toHaveLength(1);
   });
 
+  it('activates a deactivated link', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/messaging/redirect-links',
+      headers: { cookie: sessionCookie },
+      payload: { campaignId, destinationUrl: 'https://wa.me/5511999990001' },
+    });
+    const { id, code } = createRes.json();
+
+    await app.inject({
+      method: 'POST',
+      url: `/messaging/redirect-links/${id}/deactivate`,
+      headers: { cookie: sessionCookie },
+    });
+
+    const deactivatedRes = await app.inject({ method: 'GET', url: `/r/${code}` });
+    expect(deactivatedRes.statusCode).toBe(404);
+
+    await app.inject({
+      method: 'POST',
+      url: `/messaging/redirect-links/${id}/activate`,
+      headers: { cookie: sessionCookie },
+    });
+
+    const reactivatedRes = await app.inject({ method: 'GET', url: `/r/${code}` });
+    expect(reactivatedRes.statusCode).toBe(302);
+  });
+
+  it('records two separate clicks independently', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/messaging/redirect-links',
+      headers: { cookie: sessionCookie },
+      payload: { campaignId, destinationUrl: 'https://wa.me/5511999990001' },
+    });
+    const { code } = createRes.json();
+
+    await app.inject({ method: 'GET', url: `/r/${code}` });
+    await app.inject({ method: 'GET', url: `/r/${code}` });
+
+    const clicks = await db.trackingClick.findMany();
+    expect(clicks).toHaveLength(2);
+    expect(clicks[0].id).not.toBe(clicks[1].id);
+
+    const link = await db.redirectLink.findUnique({ where: { code } });
+    expect(link!.usedCount).toBe(2);
+  });
+
+  it('generates code with no PII', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/messaging/redirect-links',
+      headers: { cookie: sessionCookie },
+      payload: { campaignId, destinationUrl: 'https://wa.me/5511999990001' },
+    });
+    const { code } = createRes.json();
+
+    expect(code).not.toContain(campaignId);
+    expect(code).not.toContain(adminUserId);
+    expect(code).not.toContain('msg@test.dev');
+    expect(code).toMatch(/^[a-zA-Z0-9_-]{4,16}$/);
+  });
+
+  it('creates link with Meta attribution fields', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/messaging/redirect-links',
+      headers: { cookie: sessionCookie },
+      payload: {
+        campaignId,
+        destinationUrl: 'https://wa.me/5511999990001',
+        utmSource: 'facebook',
+        utmMedium: 'cpc',
+        utmCampaign: 'lancamento-s33',
+        utmContent: 'banner-topo',
+        fbclid: 'abc123def456',
+        metaCampaignId: 'mc_001',
+        metaAdsetId: 'mas_001',
+        metaAdId: 'mad_001',
+        creativeId: 'cr_001',
+        placement: 'feed',
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.utmSource).toBe('facebook');
+    expect(body.utmCampaign).toBe('lancamento-s33');
+    expect(body.metaCampaignId).toBe('mc_001');
+    expect(body.metaAdsetId).toBe('mas_001');
+    expect(body.metaAdId).toBe('mad_001');
+    expect(body.creativeId).toBe('cr_001');
+    expect(body.placement).toBe('feed');
+  });
+
+  it('links click to redirect link via linkId', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/messaging/redirect-links',
+      headers: { cookie: sessionCookie },
+      payload: { campaignId, destinationUrl: 'https://wa.me/5511999990001' },
+    });
+    const { id, code } = createRes.json();
+
+    await app.inject({ method: 'GET', url: `/r/${code}` });
+
+    const click = await db.trackingClick.findFirst({ where: { linkId: id } });
+    expect(click).not.toBeNull();
+    expect(click!.url).toBe('https://wa.me/5511999990001');
+  });
+
+  it('includes click count in list response', async () => {
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/messaging/redirect-links',
+      headers: { cookie: sessionCookie },
+      payload: { campaignId, destinationUrl: 'https://wa.me/5511999990001' },
+    });
+    const { code } = createRes.json();
+
+    await app.inject({ method: 'GET', url: `/r/${code}` });
+    await app.inject({ method: 'GET', url: `/r/${code}` });
+
+    const listRes = await app.inject({
+      method: 'GET',
+      url: '/messaging/redirect-links',
+      headers: { cookie: sessionCookie },
+    });
+    const links = listRes.json().links;
+    expect(links[0]._count.clicks).toBe(2);
+  });
+
   it('requires auth for messaging endpoints', async () => {
     const res = await app.inject({
       method: 'GET',
-      url: '/api/messaging/redirect-links',
+      url: '/messaging/redirect-links',
     });
     expect(res.statusCode).toBe(401);
   });

@@ -72,7 +72,7 @@ describe('Imports Integration', () => {
 
   it('previews contacts CSV', async () => {
     const res = await app.inject({
-      method: 'POST', url: '/api/imports/preview',
+      method: 'POST', url: '/imports/preview',
       cookies: { meteorico_session: sessionCookie },
       headers: { 'content-type': 'application/json' },
       payload: { type: 'contacts', content: CONTACTS_CSV, filename: 'test.csv' },
@@ -87,7 +87,7 @@ describe('Imports Integration', () => {
 
   it('previews participations CSV', async () => {
     const res = await app.inject({
-      method: 'POST', url: '/api/imports/preview',
+      method: 'POST', url: '/imports/preview',
       cookies: { meteorico_session: sessionCookie },
       headers: { 'content-type': 'application/json' },
       payload: { type: 'participations', content: PARTICIPATIONS_CSV, filename: 'part.csv' },
@@ -101,7 +101,7 @@ describe('Imports Integration', () => {
   it('shows errors for invalid phone numbers', async () => {
     const csv = 'telefone,nome\n12345,Bad Phone\n91999990010,Valid';
     const res = await app.inject({
-      method: 'POST', url: '/api/imports/preview',
+      method: 'POST', url: '/imports/preview',
       cookies: { meteorico_session: sessionCookie },
       headers: { 'content-type': 'application/json' },
       payload: { type: 'contacts', content: csv, filename: 'bad.csv' },
@@ -115,7 +115,7 @@ describe('Imports Integration', () => {
   it('sanitizes CSV formula injection', async () => {
     const csv = 'telefone,nome\n91999990011,=CMD("calc")';
     const res = await app.inject({
-      method: 'POST', url: '/api/imports/preview',
+      method: 'POST', url: '/imports/preview',
       cookies: { meteorico_session: sessionCookie },
       headers: { 'content-type': 'application/json' },
       payload: { type: 'contacts', content: csv, filename: 'formula.csv' },
@@ -130,7 +130,7 @@ describe('Imports Integration', () => {
 
   it('confirms contacts import and creates contacts', async () => {
     const previewRes = await app.inject({
-      method: 'POST', url: '/api/imports/preview',
+      method: 'POST', url: '/imports/preview',
       cookies: { meteorico_session: sessionCookie },
       headers: { 'content-type': 'application/json' },
       payload: { type: 'contacts', content: CONTACTS_CSV, filename: 'c.csv' },
@@ -138,7 +138,7 @@ describe('Imports Integration', () => {
     const importId = JSON.parse(previewRes.body).import.id;
 
     const confirmRes = await app.inject({
-      method: 'POST', url: `/api/imports/${importId}/confirm`,
+      method: 'POST', url: `/imports/${importId}/confirm`,
       cookies: { meteorico_session: sessionCookie },
     });
     expect(confirmRes.statusCode).toBe(200);
@@ -156,7 +156,7 @@ describe('Imports Integration', () => {
     });
 
     const previewRes = await app.inject({
-      method: 'POST', url: '/api/imports/preview',
+      method: 'POST', url: '/imports/preview',
       cookies: { meteorico_session: sessionCookie },
       headers: { 'content-type': 'application/json' },
       payload: { type: 'contacts', content: CONTACTS_CSV, filename: 'student.csv' },
@@ -164,7 +164,7 @@ describe('Imports Integration', () => {
     const importId = JSON.parse(previewRes.body).import.id;
 
     await app.inject({
-      method: 'POST', url: `/api/imports/${importId}/confirm`,
+      method: 'POST', url: `/imports/${importId}/confirm`,
       cookies: { meteorico_session: sessionCookie },
     });
 
@@ -175,20 +175,20 @@ describe('Imports Integration', () => {
 
   it('idempotent reimport does not duplicate contacts', async () => {
     const preview1 = await app.inject({
-      method: 'POST', url: '/api/imports/preview',
+      method: 'POST', url: '/imports/preview',
       cookies: { meteorico_session: sessionCookie },
       headers: { 'content-type': 'application/json' },
       payload: { type: 'contacts', content: CONTACTS_CSV, filename: 'idem1.csv' },
     });
-    await app.inject({ method: 'POST', url: `/api/imports/${JSON.parse(preview1.body).import.id}/confirm`, cookies: { meteorico_session: sessionCookie } });
+    await app.inject({ method: 'POST', url: `/imports/${JSON.parse(preview1.body).import.id}/confirm`, cookies: { meteorico_session: sessionCookie } });
 
     const preview2 = await app.inject({
-      method: 'POST', url: '/api/imports/preview',
+      method: 'POST', url: '/imports/preview',
       cookies: { meteorico_session: sessionCookie },
       headers: { 'content-type': 'application/json' },
       payload: { type: 'contacts', content: CONTACTS_CSV, filename: 'idem2.csv' },
     });
-    await app.inject({ method: 'POST', url: `/api/imports/${JSON.parse(preview2.body).import.id}/confirm`, cookies: { meteorico_session: sessionCookie } });
+    await app.inject({ method: 'POST', url: `/imports/${JSON.parse(preview2.body).import.id}/confirm`, cookies: { meteorico_session: sessionCookie } });
 
     const contacts = await db.contact.findMany();
     expect(contacts.length).toBe(2);
@@ -197,18 +197,18 @@ describe('Imports Integration', () => {
 
   it('rollback deletes created contacts', async () => {
     const previewRes = await app.inject({
-      method: 'POST', url: '/api/imports/preview',
+      method: 'POST', url: '/imports/preview',
       cookies: { meteorico_session: sessionCookie },
       headers: { 'content-type': 'application/json' },
       payload: { type: 'contacts', content: CONTACTS_CSV, filename: 'roll.csv' },
     });
     const importId = JSON.parse(previewRes.body).import.id;
 
-    await app.inject({ method: 'POST', url: `/api/imports/${importId}/confirm`, cookies: { meteorico_session: sessionCookie } });
+    await app.inject({ method: 'POST', url: `/imports/${importId}/confirm`, cookies: { meteorico_session: sessionCookie } });
     expect((await db.contact.findMany()).length).toBe(2);
 
     const rollbackRes = await app.inject({
-      method: 'POST', url: `/api/imports/${importId}/rollback`,
+      method: 'POST', url: `/imports/${importId}/rollback`,
       cookies: { meteorico_session: sessionCookie },
     });
     expect(rollbackRes.statusCode).toBe(200);
@@ -218,14 +218,14 @@ describe('Imports Integration', () => {
 
   it('historical campaigns from participations have no invented dates', async () => {
     const previewRes = await app.inject({
-      method: 'POST', url: '/api/imports/preview',
+      method: 'POST', url: '/imports/preview',
       cookies: { meteorico_session: sessionCookie },
       headers: { 'content-type': 'application/json' },
       payload: { type: 'participations', content: PARTICIPATIONS_CSV, filename: 'hist.csv' },
     });
     const importId = JSON.parse(previewRes.body).import.id;
 
-    await app.inject({ method: 'POST', url: `/api/imports/${importId}/confirm`, cookies: { meteorico_session: sessionCookie } });
+    await app.inject({ method: 'POST', url: `/imports/${importId}/confirm`, cookies: { meteorico_session: sessionCookie } });
 
     const campaign = await db.campaign.findFirst({ where: { editionNumber: 40 } });
     expect(campaign).toBeTruthy();
@@ -237,14 +237,14 @@ describe('Imports Integration', () => {
 
   it('rotulos_vcard goes to metadata not contact name', async () => {
     const previewRes = await app.inject({
-      method: 'POST', url: '/api/imports/preview',
+      method: 'POST', url: '/imports/preview',
       cookies: { meteorico_session: sessionCookie },
       headers: { 'content-type': 'application/json' },
       payload: { type: 'participations', content: PARTICIPATIONS_CSV, filename: 'vcard.csv' },
     });
     const importId = JSON.parse(previewRes.body).import.id;
 
-    await app.inject({ method: 'POST', url: `/api/imports/${importId}/confirm`, cookies: { meteorico_session: sessionCookie } });
+    await app.inject({ method: 'POST', url: `/imports/${importId}/confirm`, cookies: { meteorico_session: sessionCookie } });
 
     const contact = await db.contact.findUnique({ where: { phone: '5591999990001' } });
     expect(contact).toBeTruthy();
@@ -261,7 +261,7 @@ describe('Imports Integration', () => {
 
   it('rejects path traversal in filename', async () => {
     const res = await app.inject({
-      method: 'POST', url: '/api/imports/preview',
+      method: 'POST', url: '/imports/preview',
       cookies: { meteorico_session: sessionCookie },
       headers: { 'content-type': 'application/json' },
       payload: { type: 'contacts', content: CONTACTS_CSV, filename: '../../../etc/passwd' },
@@ -273,19 +273,19 @@ describe('Imports Integration', () => {
 
   it('lists imports with pagination', async () => {
     await app.inject({
-      method: 'POST', url: '/api/imports/preview',
+      method: 'POST', url: '/imports/preview',
       cookies: { meteorico_session: sessionCookie },
       headers: { 'content-type': 'application/json' },
       payload: { type: 'contacts', content: CONTACTS_CSV, filename: 'list1.csv' },
     });
     await app.inject({
-      method: 'POST', url: '/api/imports/preview',
+      method: 'POST', url: '/imports/preview',
       cookies: { meteorico_session: sessionCookie },
       headers: { 'content-type': 'application/json' },
       payload: { type: 'contacts', content: CONTACTS_CSV, filename: 'list2.csv' },
     });
 
-    const res = await app.inject({ method: 'GET', url: '/api/imports', cookies: { meteorico_session: sessionCookie } });
+    const res = await app.inject({ method: 'GET', url: '/imports', cookies: { meteorico_session: sessionCookie } });
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.body);
     expect(body.total).toBe(2);
@@ -294,7 +294,7 @@ describe('Imports Integration', () => {
   });
 
   it('unauthenticated request returns 401', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/imports' });
+    const res = await app.inject({ method: 'GET', url: '/imports' });
     expect(res.statusCode).toBe(401);
     await app.close();
   });
