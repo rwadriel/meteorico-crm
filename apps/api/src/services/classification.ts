@@ -1,7 +1,14 @@
 import type { PrismaClient } from '@meteorico/database';
 import { Prisma } from '@meteorico/database';
+import { getHistoryEvidence } from './participation-history.js';
 
-export type ContactClassification = 'aluno' | 'novo' | 'reparticipante' | 'veterano' | 'blocked';
+export type ContactClassification =
+  | 'aluno'
+  | 'novo'
+  | 'reparticipante'
+  | 'veterano'
+  | 'needs_review'
+  | 'blocked';
 
 export interface ClassificationFact {
   key: string;
@@ -111,11 +118,25 @@ export async function classifyContact(
     value: confirmedParticipations,
     source: 'campaign_participations',
   });
+  const history = getHistoryEvidence(contact.metadata, confirmedParticipations);
+  facts.push({
+    key: 'historical_evidence',
+    value: history.hasEvidence,
+    source: 'contacts.metadata',
+  });
+  facts.push({
+    key: 'history_status',
+    value: history.status,
+    source: 'contacts.metadata+campaign_participations',
+  });
 
   let classification: ContactClassification;
   let explanation: string;
 
-  if (confirmedParticipations === 0) {
+  if (confirmedParticipations === 0 && history.hasEvidence) {
+    classification = 'needs_review';
+    explanation = 'Historico anterior indicado, mas sem campanha confirmada';
+  } else if (confirmedParticipations === 0) {
     classification = 'novo';
     explanation = 'Primeira participacao do contato';
   } else if (confirmedParticipations < rules.veteranThreshold) {
@@ -134,7 +155,7 @@ export async function classifyContact(
     isSimulation: simulate,
   };
 
-  if (!simulate) {
+  if (!simulate && classification !== 'needs_review') {
     const groupId = await allocateGroup(db, campaignId, classification);
     result.groupId = groupId;
     await persistClassification(db, contactId, campaignId, result);
@@ -153,10 +174,12 @@ async function allocateGroup(
     novo: ['novo', 'geral'],
     reparticipante: ['reparticipante', 'geral'],
     veterano: ['veterano', 'geral'],
+    needs_review: [],
     blocked: [],
   };
 
   const categories = categoryMap[classification];
+  if (categories.length === 0) return null;
 
   for (const category of categories) {
     const groups = await db.group.findMany({

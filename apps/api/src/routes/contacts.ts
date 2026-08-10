@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { getClient } from '@meteorico/database';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
+import { getHistoryQualityCounts } from '../services/participation-history.js';
 import { z } from 'zod';
 
 const listContactsSchema = z.object({
@@ -119,13 +120,20 @@ export async function contactRoutes(app: FastifyInstance) {
   app.get('/contacts/stats', {
     preHandler: requirePermission('contacts', 'read'),
   }, async () => {
-    const [total, students, withEmail] = await Promise.all([
+    const [total, students, withEmail, historyQuality] = await Promise.all([
       db.contact.count(),
       db.contact.count({ where: { isStudent: true } }),
       db.contact.count({ where: { email: { not: null } } }),
+      getHistoryQualityCounts(db),
     ]);
 
-    return { total, students, withEmail };
+    return {
+      total,
+      students,
+      withEmail,
+      unresolvedHistory: historyQuality.unresolvedHistory,
+      needsReview: historyQuality.needsReview,
+    };
   });
 }
 

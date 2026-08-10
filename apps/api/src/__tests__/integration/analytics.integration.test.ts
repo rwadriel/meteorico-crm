@@ -137,6 +137,34 @@ describe('Analytics & Eduzz Integration', () => {
     expect(body.metrics.total_revenue_cents).toBe(19700);
   });
 
+  it('separates unresolved history from commercial needs review', async () => {
+    await db.contact.createMany({
+      data: [
+        {
+          phone: '5511999990198',
+          name: 'Unresolved',
+          metadata: { quantidade_participacoes_csv: '1' },
+        },
+        {
+          phone: '5511999990199',
+          name: 'Student unresolved',
+          isStudent: true,
+          metadata: { quantidade_participacoes_csv: '1' },
+        },
+      ],
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/analytics/dashboard',
+      headers: { cookie: sessionCookie },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().metrics.historical_unresolved).toBe(2);
+    expect(res.json().metrics.needs_review).toBe(1);
+  });
+
   it('returns 40 global contacts and all 17 campaigns across statuses', async () => {
     await db.contact.createMany({
       data: Array.from({ length: 40 }, (_, index) => ({

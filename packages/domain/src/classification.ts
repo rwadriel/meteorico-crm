@@ -7,11 +7,19 @@ export interface ClassificationInput {
   hasExistingParticipation: boolean;
   existingSegment?: Segment;
   confirmedCampaignCount: number;
+  hasUnresolvedHistory?: boolean;
 }
 
 export interface ClassificationResult {
-  segment: Segment;
-  action: 'FLUXO_ALUNO' | 'MANTER_EXISTENTE' | 'GRUPO_NOVOS' | 'GRUPO_REPARTICIPANTES' | 'DIAGNOSTICO_VETERANO' | 'BLOQUEADO';
+  segment: Segment | null;
+  action:
+    | 'FLUXO_ALUNO'
+    | 'MANTER_EXISTENTE'
+    | 'GRUPO_NOVOS'
+    | 'GRUPO_REPARTICIPANTES'
+    | 'DIAGNOSTICO_VETERANO'
+    | 'NEEDS_REVIEW'
+    | 'BLOQUEADO';
   reason: string;
 }
 
@@ -24,6 +32,9 @@ export function classifyContact(input: ClassificationInput): ClassificationResul
   }
   if (input.hasExistingParticipation && input.existingSegment) {
     return { segment: input.existingSegment, action: 'MANTER_EXISTENTE', reason: 'Participação já existente na campanha atual' };
+  }
+  if (input.confirmedCampaignCount === 0 && input.hasUnresolvedHistory) {
+    return { segment: null, action: 'NEEDS_REVIEW', reason: 'Histórico indicado sem campanha confirmada' };
   }
   if (input.confirmedCampaignCount === 0) {
     return { segment: 'NOVO', action: 'GRUPO_NOVOS', reason: 'Primeira participação' };

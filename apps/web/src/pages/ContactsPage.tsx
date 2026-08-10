@@ -24,7 +24,13 @@ export function ContactsPage() {
   const [studentFilter, setStudentFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [stats, setStats] = useState<{ total: number; students: number; withEmail: number } | null>(null);
+  const [stats, setStats] = useState<{
+    total: number;
+    students: number;
+    withEmail: number;
+    unresolvedHistory: number;
+    needsReview: number;
+  } | null>(null);
 
   const fetchContacts = useCallback(async () => {
     setLoading(true);
@@ -91,6 +97,8 @@ export function ContactsPage() {
           <div className="card"><p className="text-sm text-secondary">Total</p><p className="text-2xl font-bold">{stats.total}</p></div>
           <div className="card"><p className="text-sm text-secondary">Alunos</p><p className="text-2xl font-bold">{stats.students}</p></div>
           <div className="card"><p className="text-sm text-secondary">Com e-mail</p><p className="text-2xl font-bold">{stats.withEmail}</p></div>
+          <div className="card"><p className="text-sm text-secondary">Historico nao resolvido</p><p className="text-2xl font-bold">{stats.unresolvedHistory}</p></div>
+          <div className="card"><p className="text-sm text-secondary">Em revisao</p><p className="text-2xl font-bold">{stats.needsReview}</p></div>
         </div>
       )}
 

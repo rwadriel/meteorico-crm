@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@meteorico/database';
+import { getHistoryQualityCounts } from './participation-history.js';
 
 export interface DateFilter {
   from?: Date;
@@ -27,6 +28,8 @@ export const METRIC_DEFINITIONS: MetricDefinition[] = [
   { key: 'total_messages_sent', label: 'Mensagens enviadas', description: 'Total de mensagens outbound', unit: 'count', source: 'conversation_messages' },
   { key: 'total_redirect_clicks', label: 'Cliques em links', description: 'Total de cliques em redirect links', unit: 'count', source: 'tracking_clicks' },
   { key: 'total_diagnoses', label: 'Diagnosticos', description: 'Total de diagnosticos de IA realizados', unit: 'count', source: 'diagnoses' },
+  { key: 'historical_unresolved', label: 'Historico nao resolvido', description: 'Contatos com evidencia historica sem campanha confirmada', unit: 'count', source: 'contacts.metadata+campaign_participations' },
+  { key: 'needs_review', label: 'Em revisao', description: 'Nao alunos fora do roteamento automatico por historico pendente', unit: 'count', source: 'contacts.metadata+campaign_participations' },
 ];
 
 export async function getGlobalDashboard(db: PrismaClient, dateFilter?: DateFilter) {
@@ -44,6 +47,7 @@ export async function getGlobalDashboard(db: PrismaClient, dateFilter?: DateFilt
     clicks,
     diagnoses,
     campaigns,
+    historyQuality,
   ] = await Promise.all([
     db.contact.count({ where: dateWhere.created }),
     db.campaignParticipation.count({ where: dateWhere.created }),
@@ -56,6 +60,7 @@ export async function getGlobalDashboard(db: PrismaClient, dateFilter?: DateFilt
     db.trackingClick.count({ where: dateWhere.created }),
     db.diagnosis.count({ where: dateWhere.created }),
     db.campaign.count(),
+    getHistoryQualityCounts(db),
   ]);
 
   const totalRevenue = purchases._sum.amountCents ?? 0;
@@ -82,6 +87,8 @@ export async function getGlobalDashboard(db: PrismaClient, dateFilter?: DateFilt
       total_redirect_clicks: clicks,
       total_diagnoses: diagnoses,
       total_campaigns: campaigns,
+      historical_unresolved: historyQuality.unresolvedHistory,
+      needs_review: historyQuality.needsReview,
     },
     freshness: {
       calculatedAt: new Date().toISOString(),

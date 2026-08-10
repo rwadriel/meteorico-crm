@@ -15,6 +15,7 @@ implementacao real e um mock para testes e desenvolvimento local.
 | Eduzz                    | Futuro      | Pendente     | Etapa 07      |
 | xAI/Grok                 | Futuro      | Pendente     | Etapa 07      |
 | Meta Marketing API       | Futuro      | Pendente     | Etapa 07      |
+| Historico de participacao| Parcial     | Contrato interno | Adapter pendente |
 
 ## 1. WhatsApp Manager API (somente leitura)
 
@@ -261,6 +262,52 @@ marketing e atribuicao de leads.
 - App registrado no Meta
 - Pixel ID
 - Permissoes necessarias
+
+## 6. Historico externo de participacoes (parcial)
+
+### Status
+
+O contrato interno `ParticipationHistoryProvider` e a reconciliacao
+idempotente estao preparados, mas nao existe adapter, endpoint externo,
+URL, variavel de ambiente ou credencial definida. A integracao permanece
+desativada ate o recebimento e a aprovacao do contrato do provedor.
+
+### Regras de reconciliacao
+
+- `CampaignParticipation` continua sendo a unica fonte definitiva de
+  participacoes confirmadas.
+- Edicoes identificaveis e ja existentes podem ser reconciliadas por
+  `contactId + campaignId`, sem duplicacao.
+- Edicoes desconhecidas nao criam campanhas automaticamente.
+- Um total externo sem edicoes e preservado apenas em metadata como
+  evidencia; ele nao fabrica `CampaignParticipation` nem altera o total
+  confirmado.
+- Evidencia repetida da mesma fonte substitui o registro anterior da
+  fonte, em vez de somar contagens.
+- Contato nao aluno sem participacao confirmada e com evidencia fica em
+  `needs_review`, fora da alocacao automatica de grupos.
+
+### Contrato esperado
+
+```typescript
+interface ParticipationHistoryProvider {
+  readonly name: string
+  getHistoryByPhones(phones: string[]): Promise<Array<{
+    phone: string
+    totalParticipations?: number
+    campaignEditions?: number[]
+  }>>
+  healthCheck(): Promise<boolean>
+}
+```
+
+### Entradas pendentes
+
+- Documentacao e contrato do provedor externo
+- URL base e metodo de autenticacao
+- Credenciais de staging
+- Politica de retry, rate limit e paginacao
+- Autorizacao explicita para ativacao
 
 ## Padrao de integracao
 

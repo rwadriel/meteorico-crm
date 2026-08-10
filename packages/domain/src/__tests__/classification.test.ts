@@ -53,6 +53,22 @@ describe('classifyContact', () => {
     expect(result.segment).toBe('NOVO');
   });
 
+  it('returns NEEDS_REVIEW without a segment for unresolved historical evidence', () => {
+    const result = classifyContact(
+      makeInput({ confirmedCampaignCount: 0, hasUnresolvedHistory: true }),
+    );
+    expect(result.action).toBe('NEEDS_REVIEW');
+    expect(result.segment).toBeNull();
+  });
+
+  it('keeps student precedence over unresolved historical evidence', () => {
+    const result = classifyContact(
+      makeInput({ isStudent: true, confirmedCampaignCount: 0, hasUnresolvedHistory: true }),
+    );
+    expect(result.action).toBe('FLUXO_ALUNO');
+    expect(result.segment).toBe('ALUNO');
+  });
+
   it('returns GRUPO_REPARTICIPANTES for second participation (1 previous)', () => {
     const result = classifyContact(makeInput({ confirmedCampaignCount: 1 }));
     expect(result.action).toBe('GRUPO_REPARTICIPANTES');

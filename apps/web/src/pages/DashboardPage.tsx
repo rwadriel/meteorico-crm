@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { LayoutDashboard, Users, Megaphone, MessageSquare } from 'lucide-react';
+import { AlertTriangle, LayoutDashboard, Users, Megaphone, MessageSquare, SearchCheck } from 'lucide-react';
 import { Alert } from '../components/index.js';
 
 const API = import.meta.env.VITE_API_URL ?? '';
@@ -7,6 +7,8 @@ const API = import.meta.env.VITE_API_URL ?? '';
 interface DashboardMetrics {
   total_contacts: number;
   total_campaigns: number;
+  historical_unresolved: number;
+  needs_review: number;
 }
 
 export function DashboardPage() {
@@ -39,6 +41,8 @@ export function DashboardPage() {
 
   const contactsValue = loading ? '—' : String(metrics?.total_contacts ?? 0);
   const campaignsValue = loading ? '—' : String(metrics?.total_campaigns ?? 0);
+  const unresolvedValue = loading ? '—' : String(metrics?.historical_unresolved ?? 0);
+  const needsReviewValue = loading ? '—' : String(metrics?.needs_review ?? 0);
 
   return (
     <div>
@@ -56,6 +60,8 @@ export function DashboardPage() {
         <StatCard icon={Users} label="Total de contatos" value={contactsValue} />
         <StatCard icon={LayoutDashboard} label="Grupos" value="0" />
         <StatCard icon={MessageSquare} label="Mensagens" value="0" />
+        <StatCard icon={AlertTriangle} label="Historico nao resolvido" value={unresolvedValue} />
+        <StatCard icon={SearchCheck} label="Em revisao" value={needsReviewValue} />
       </div>
     </div>
   );
