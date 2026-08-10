@@ -1,6 +1,45 @@
+import { useEffect, useState } from 'react';
 import { LayoutDashboard, Users, Megaphone, MessageSquare } from 'lucide-react';
+import { Alert } from '../components/index.js';
+
+const API = import.meta.env.VITE_API_URL ?? '';
+
+interface DashboardMetrics {
+  total_contacts: number;
+  total_campaigns: number;
+}
 
 export function DashboardPage() {
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+
+    fetch(`${API}/api/analytics/dashboard`, { credentials: 'include' })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Falha ao carregar o Dashboard');
+        return response.json() as Promise<{ metrics: DashboardMetrics }>;
+      })
+      .then((data) => {
+        if (active) setMetrics(data.metrics);
+      })
+      .catch((reason: unknown) => {
+        if (active) setError(reason instanceof Error ? reason.message : 'Erro desconhecido');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const contactsValue = loading ? '—' : String(metrics?.total_contacts ?? 0);
+  const campaignsValue = loading ? '—' : String(metrics?.total_campaigns ?? 0);
+
   return (
     <div>
       <div className="content-header">
@@ -10,9 +49,11 @@ export function DashboardPage() {
         </div>
       </div>
 
+      {error && <Alert variant="danger">{error}</Alert>}
+
       <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
-        <StatCard icon={Megaphone} label="Campanhas" value="0" />
-        <StatCard icon={Users} label="Contatos" value="0" />
+        <StatCard icon={Megaphone} label="Todas as campanhas" value={campaignsValue} />
+        <StatCard icon={Users} label="Total de contatos" value={contactsValue} />
         <StatCard icon={LayoutDashboard} label="Grupos" value="0" />
         <StatCard icon={MessageSquare} label="Mensagens" value="0" />
       </div>

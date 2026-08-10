@@ -102,6 +102,13 @@ describe('Imports Integration', () => {
     });
   }
 
+  async function reconcile(importId: string) {
+    return app.inject({
+      method: 'POST', url: `/imports/${importId}/reconcile`,
+      cookies: { meteorico_session: sessionCookie },
+    });
+  }
+
   // ─── Test 1: Columns in standard order ─────────────────────────────
 
   it('1. parses contacts in standard column order', async () => {
@@ -541,6 +548,51 @@ describe('Imports Integration', () => {
     const pBody = JSON.parse((await confirm(JSON.parse(pRes.body).import.id)).body);
 
     expect(pBody.divergences).toBeDefined();
+    await app.close();
+  });
+
+  it('reconciles legacy count one to zero and preserves the divergence', async () => {
+    const contactsCsv = [
+      'telefone,nome,quantidade_participacoes',
+      '91999990001,Ana,1',
+    ].join('\n');
+    const previewRes = await preview('contacts', contactsCsv, 'legacy-zero.csv');
+    const importId = JSON.parse(previewRes.body).import.id;
+    await confirm(importId);
+
+    const before = await db.contact.findUnique({ where: { phone: '5591999990001' } });
+    expect(before!.totalParticipations).toBe(1);
+    expect((before!.metadata as Record<string, unknown>).quantidade_participacoes_csv).toBe('1');
+
+    const divergenceBefore = await app.inject({
+      method: 'GET', url: `/imports/${importId}/divergences`,
+      cookies: { meteorico_session: sessionCookie },
+    });
+    expect(JSON.parse(divergenceBefore.body).divergences).toMatchObject([
+      {
+        type: 'LEGACY_PARTICIPATION_COUNT_MISMATCH',
+        csvValue: 1,
+        calculatedValue: 0,
+      },
+    ]);
+
+    const reconcileRes = await reconcile(importId);
+    expect(reconcileRes.statusCode).toBe(200);
+    expect(JSON.parse(reconcileRes.body).divergences).toMatchObject([
+      {
+        type: 'LEGACY_PARTICIPATION_COUNT_MISMATCH',
+        csvValue: 1,
+        calculatedValue: 0,
+      },
+    ]);
+
+    const after = await db.contact.findUnique({ where: { phone: '5591999990001' } });
+    expect(after!.totalParticipations).toBe(0);
+    expect((after!.metadata as Record<string, unknown>).quantidade_participacoes_csv).toBe('1');
+
+    const repeated = await reconcile(importId);
+    expect(JSON.parse(repeated.body).divergences).toHaveLength(1);
+    expect((await db.contact.findUnique({ where: { phone: '5591999990001' } }))!.totalParticipations).toBe(0);
     await app.close();
   });
 });

@@ -916,14 +916,16 @@ export async function generateDivergenceReport(db: PrismaClient, importId: strin
 
       if (!contact) continue;
 
-      const confirmedParticipations = contact.participations.length;
-      if (csvParticipations > 0 && confirmedParticipations > 0 && csvParticipations !== confirmedParticipations) {
+      const confirmedParticipations = new Set(
+        contact.participations.map((participation) => participation.campaignId),
+      ).size;
+      if (csvParticipations > 0 && csvParticipations !== confirmedParticipations) {
         divergences.push({
           phone,
-          type: 'quantidade_participacoes',
+          type: 'LEGACY_PARTICIPATION_COUNT_MISMATCH',
           csvValue: csvParticipations,
           calculatedValue: confirmedParticipations,
-          action: 'Fonte de verdade: histórico confirmado no banco',
+          action: 'Valor legado preservado em metadata; fonte de verdade: campanhas confirmadas no banco',
         });
       }
 
@@ -1081,21 +1083,38 @@ export async function reconcileParticipationCounts(db: PrismaClient, importId: s
 
     if (!contact) continue;
 
-    const distinctCampaigns = contact.participations.length;
-    if (distinctCampaigns > 0 && contact.totalParticipations !== distinctCampaigns) {
-      const csvValue = contact.totalParticipations;
+    const distinctCampaigns = new Set(
+      contact.participations.map((participation) => participation.campaignId),
+    ).size;
+    const previousTotal = contact.totalParticipations;
+    const meta = contact.metadata as Record<string, unknown> | null;
+    const legacyValueRaw = meta?.quantidade_participacoes_csv;
+    const legacyValue = legacyValueRaw !== undefined && legacyValueRaw !== null
+      ? Number(legacyValueRaw)
+      : null;
 
+    if (previousTotal !== distinctCampaigns) {
       await db.contact.update({
         where: { id: contact.id },
         data: { totalParticipations: distinctCampaigns },
       });
+    }
 
+    if (legacyValue !== null && Number.isFinite(legacyValue) && legacyValue !== distinctCampaigns) {
       divergences.push({
         phone,
-        type: 'quantidade_participacoes',
-        csvValue,
+        type: 'LEGACY_PARTICIPATION_COUNT_MISMATCH',
+        csvValue: legacyValue,
         calculatedValue: distinctCampaigns,
-        action: 'Atualizado para contagem real de campanhas distintas',
+        action: 'Valor legado preservado em metadata; campo derivado atualizado para campanhas distintas confirmadas',
+      });
+    } else if (previousTotal !== distinctCampaigns) {
+      divergences.push({
+        phone,
+        type: 'PARTICIPATION_COUNT_RECONCILED',
+        csvValue: previousTotal,
+        calculatedValue: distinctCampaigns,
+        action: 'Campo derivado atualizado para campanhas distintas confirmadas',
       });
     }
 
@@ -1105,7 +1124,6 @@ export async function reconcileParticipationCounts(db: PrismaClient, importId: s
 
     if (editions.length > 0) {
       const maxEdition = Math.max(...editions);
-      const meta = contact.metadata as Record<string, unknown> | null;
       const csvLastEdition = meta?.ultima_edicao_csv ? Number(meta.ultima_edicao_csv) : null;
 
       if (csvLastEdition !== null && csvLastEdition !== maxEdition) {

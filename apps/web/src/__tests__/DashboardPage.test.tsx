@@ -1,0 +1,47 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import { DashboardPage } from '../pages/DashboardPage.js';
+
+function mockDashboard(totalContacts: number, totalCampaigns: number) {
+  globalThis.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      metrics: {
+        total_contacts: totalContacts,
+        total_campaigns: totalCampaigns,
+      },
+    }),
+  });
+}
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('DashboardPage', () => {
+  it('maps the global analytics response to the contact and campaign cards', async () => {
+    mockDashboard(40, 17);
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('40')).toBeDefined();
+      expect(screen.getByText('17')).toBeDefined();
+    });
+
+    expect(screen.getByText('Total de contatos').parentElement?.textContent).toContain('40');
+    expect(screen.getByText('Todas as campanhas').parentElement?.textContent).toContain('17');
+    expect(globalThis.fetch).toHaveBeenCalledWith('/api/analytics/dashboard', {
+      credentials: 'include',
+    });
+  });
+
+  it('renders real zero values for an empty database', async () => {
+    mockDashboard(0, 0);
+    render(<DashboardPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Total de contatos').parentElement?.textContent).toContain('0');
+      expect(screen.getByText('Todas as campanhas').parentElement?.textContent).toContain('0');
+    });
+  });
+});

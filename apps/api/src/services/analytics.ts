@@ -15,6 +15,7 @@ export interface MetricDefinition {
 
 export const METRIC_DEFINITIONS: MetricDefinition[] = [
   { key: 'total_contacts', label: 'Contatos', description: 'Total de contatos unicos no sistema', unit: 'count', source: 'contacts' },
+  { key: 'total_campaigns', label: 'Todas as campanhas', description: 'Total de campanhas em qualquer status', unit: 'count', source: 'campaigns' },
   { key: 'total_participations', label: 'Participacoes', description: 'Total de participacoes em campanhas', unit: 'count', source: 'campaign_participations' },
   { key: 'total_entries', label: 'Entradas', description: 'Total de entradas em grupos', unit: 'count', source: 'group_events' },
   { key: 'total_exits', label: 'Saidas', description: 'Total de saidas de grupos', unit: 'count', source: 'group_events' },

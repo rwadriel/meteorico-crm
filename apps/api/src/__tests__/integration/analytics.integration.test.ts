@@ -96,6 +96,7 @@ describe('Analytics & Eduzz Integration', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.metrics.total_contacts).toBe(0);
+    expect(body.metrics.total_campaigns).toBe(0);
     expect(body.metrics.total_purchases).toBe(0);
     expect(body.metrics.net_revenue_cents).toBe(0);
     expect(body.freshness.calculatedAt).toBeDefined();
@@ -130,9 +131,47 @@ describe('Analytics & Eduzz Integration', () => {
     });
     const body = res.json();
     expect(body.metrics.total_contacts).toBe(1);
+    expect(body.metrics.total_campaigns).toBe(1);
     expect(body.metrics.total_participations).toBe(1);
     expect(body.metrics.total_purchases).toBe(1);
     expect(body.metrics.total_revenue_cents).toBe(19700);
+  });
+
+  it('returns 40 global contacts and all 17 campaigns across statuses', async () => {
+    await db.contact.createMany({
+      data: Array.from({ length: 40 }, (_, index) => ({
+        phone: `55119888${String(index).padStart(5, '0')}`,
+        name: `Contact ${index + 1}`,
+      })),
+    });
+    await db.campaign.createMany({
+      data: [
+        ...Array.from({ length: 16 }, (_, index) => ({
+          name: `Historical ${index + 24}`,
+          slug: `historical-${index + 24}`,
+          editionNumber: index + 24,
+          status: 'historical',
+          createdBy: adminUserId,
+        })),
+        {
+          name: 'Draft campaign',
+          slug: 'draft-campaign',
+          editionNumber: 41,
+          status: 'draft',
+          createdBy: adminUserId,
+        },
+      ],
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/analytics/dashboard',
+      headers: { cookie: sessionCookie },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.metrics.total_contacts).toBe(40);
+    expect(body.metrics.total_campaigns).toBe(17);
   });
 
   it('returns campaign dashboard with classifications', async () => {
