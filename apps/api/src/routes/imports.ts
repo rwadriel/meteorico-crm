@@ -10,6 +10,8 @@ import {
   rollbackImport,
   getImport,
   listImports,
+  generateDivergenceReport,
+  reconcileParticipationCounts,
 } from '../services/import.js';
 
 export async function importRoutes(app: FastifyInstance) {
@@ -121,18 +123,58 @@ export async function importRoutes(app: FastifyInstance) {
         result = await processParticipationsImport(db, id);
       }
 
+      const divergences = await generateDivergenceReport(db, id);
+
       await writeAuditLog(db, {
         userId: request.user!.id,
         action: 'import.confirm',
         resource: 'imports',
         resourceId: id,
-        newValue: { processedRows: result.processedRows, errorRows: result.errorRows },
+        newValue: { processedRows: result.processedRows, errorRows: result.errorRows, divergences: divergences.length },
         ipAddress: request.ip,
         userAgent: request.headers['user-agent'] ?? '',
       });
-      return result;
+
+      return { ...result, divergences };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Import failed';
+      return reply.status(400).send({ message });
+    }
+  });
+
+  app.post('/imports/:id/reconcile', {
+    preHandler: requirePermission('imports', 'create'),
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      const divergences = await reconcileParticipationCounts(db, id);
+
+      await writeAuditLog(db, {
+        userId: request.user!.id,
+        action: 'import.reconcile',
+        resource: 'imports',
+        resourceId: id,
+        newValue: { divergences: divergences.length },
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'] ?? '',
+      });
+
+      return { divergences };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Reconciliation failed';
+      return reply.status(400).send({ message });
+    }
+  });
+
+  app.get('/imports/:id/divergences', {
+    preHandler: requirePermission('imports', 'read'),
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      const divergences = await generateDivergenceReport(db, id);
+      return { divergences };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to generate divergence report';
       return reply.status(400).send({ message });
     }
   });

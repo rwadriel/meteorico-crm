@@ -15,6 +15,7 @@ const ROLES_CONFIG = [
       { resource: 'users', actions: ['create', 'read', 'update', 'delete'] },
       { resource: 'reports', actions: ['read', 'export'] },
       { resource: 'integration', actions: ['read', 'write'] },
+      { resource: 'imports', actions: ['create', 'read', 'delete'] },
     ],
   },
   {
@@ -30,6 +31,7 @@ const ROLES_CONFIG = [
       { resource: 'users', actions: ['read'] },
       { resource: 'reports', actions: ['read', 'export'] },
       { resource: 'integration', actions: ['read', 'write'] },
+      { resource: 'imports', actions: ['create', 'read', 'delete'] },
     ],
   },
   {

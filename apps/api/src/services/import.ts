@@ -1,4 +1,7 @@
-import type { PrismaClient, Prisma } from '@meteorico/database';
+import { Prisma } from '@meteorico/database';
+import type { PrismaClient } from '@meteorico/database';
+
+// ─── Interfaces ──────────────────────────────────────────────────────
 
 interface ParsedContactRow {
   phone: string;
@@ -30,7 +33,77 @@ interface ParseError {
   message: string;
 }
 
-function parseCsvLine(line: string): string[] {
+interface Divergence {
+  phone: string;
+  type: string;
+  csvValue: number;
+  calculatedValue: number;
+  action: string;
+}
+
+interface PreviewStats {
+  totalLines: number;
+  validLines: number;
+  invalidLines: number;
+  newContacts: number;
+  existingContacts: number;
+  updatingContacts: number;
+  studentsDetected: number;
+  historicalCampaignsToCreate: number;
+  participationsToCreate: number;
+  duplicatesInFile: number;
+  invalidPhones: number;
+  divergences: Divergence[];
+  warnings: string[];
+}
+
+// ─── Header mapping ──────────────────────────────────────────────────
+
+const CONTACT_HEADER_MAP: Record<string, string> = {
+  telefone: 'telefone',
+  phone: 'telefone',
+  nome: 'nome',
+  name: 'nome',
+  email: 'email',
+  quantidade_participacoes: 'quantidade_participacoes',
+  participacoes: 'quantidade_participacoes',
+  ultima_edicao: 'ultima_edicao',
+  aluno: 'aluno',
+  produto: 'produto',
+  product: 'produto',
+  origem: 'origem',
+  origin: 'origem',
+  data_primeiro_contato: 'data_primeiro_contato',
+  primeiro_contato: 'data_primeiro_contato',
+  data_ultimo_contato: 'data_ultimo_contato',
+  ultimo_contato: 'data_ultimo_contato',
+  observacoes: 'observacoes',
+  notes: 'observacoes',
+};
+
+const CONTACT_REQUIRED_HEADERS = ['telefone'];
+
+const PARTICIPATION_HEADER_MAP: Record<string, string> = {
+  telefone: 'telefone',
+  phone: 'telefone',
+  campanha: 'campanha',
+  campaign: 'campanha',
+  aluno_atual: 'aluno_atual',
+  aluno: 'aluno_atual',
+  status_na_campanha: 'status_na_campanha',
+  status: 'status_na_campanha',
+  marcado_saiu: 'marcado_saiu',
+  rotulos_vcard: 'rotulos_vcard',
+  vcard: 'rotulos_vcard',
+  origem: 'origem',
+  origin: 'origem',
+};
+
+const PARTICIPATION_REQUIRED_HEADERS = ['telefone', 'campanha'];
+
+// ─── CSV Utilities ───────────────────────────────────────────────────
+
+function parseCsvLine(line: string, delimiter: string = ','): string[] {
   const fields: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -58,7 +131,7 @@ function parseCsvLine(line: string): string[] {
         i++;
         continue;
       }
-      if (ch === ',') {
+      if (ch === delimiter) {
         fields.push(current);
         current = '';
         i++;
@@ -73,12 +146,29 @@ function parseCsvLine(line: string): string[] {
   return fields;
 }
 
+function detectDelimiter(headerLine: string): string {
+  const semicolonCount = (headerLine.match(/;/g) || []).length;
+  const commaCount = (headerLine.match(/,/g) || []).length;
+  const tabCount = (headerLine.match(/\t/g) || []).length;
+  if (tabCount > commaCount && tabCount > semicolonCount) return '\t';
+  if (semicolonCount > commaCount) return ';';
+  return ',';
+}
+
 function sanitizeString(value: string): string {
   let s = value.trim();
   if (s.length > 0 && (s[0] === '=' || s[0] === '+' || s[0] === '-' || s[0] === '@')) {
     s = s.slice(1).trim();
   }
   return s;
+}
+
+function normalizeHeaderName(raw: string): string {
+  return raw.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 export function normalizePhone(raw: string): string | null {
@@ -96,7 +186,53 @@ export function normalizePhone(raw: string): string | null {
   return digits;
 }
 
-export function parseContactsCsv(content: string): { rows: ParsedContactRow[]; errors: ParseError[] } {
+function mapHeaders(
+  headerFields: string[],
+  headerMap: Record<string, string>,
+  requiredHeaders: string[],
+): { columnMap: Map<string, number>; errors: string[] } {
+  const columnMap = new Map<string, number>();
+  const errors: string[] = [];
+  const seen = new Set<string>();
+
+  for (let i = 0; i < headerFields.length; i++) {
+    const raw = normalizeHeaderName(headerFields[i]);
+    if (!raw) continue;
+
+    const mapped = headerMap[raw];
+    if (!mapped) continue;
+
+    if (seen.has(mapped)) {
+      errors.push(`Duplicate header: "${headerFields[i].trim()}" (column ${i + 1})`);
+      continue;
+    }
+
+    seen.add(mapped);
+    columnMap.set(mapped, i);
+  }
+
+  for (const req of requiredHeaders) {
+    if (!columnMap.has(req)) {
+      errors.push(`Required header missing: "${req}"`);
+    }
+  }
+
+  if (columnMap.size === 0 && errors.length === 0) {
+    errors.push('No recognized headers found in the file');
+  }
+
+  return { columnMap, errors };
+}
+
+function getField(fields: string[], columnMap: Map<string, number>, key: string): string {
+  const idx = columnMap.get(key);
+  if (idx === undefined) return '';
+  return sanitizeString(fields[idx] ?? '');
+}
+
+// ─── CSV Parsers ─────────────────────────────────────────────────────
+
+export function parseContactsCsv(content: string): { rows: ParsedContactRow[]; errors: ParseError[]; headerErrors?: string[] } {
   const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
   const rows: ParsedContactRow[] = [];
   const errors: ParseError[] = [];
@@ -105,11 +241,19 @@ export function parseContactsCsv(content: string): { rows: ParsedContactRow[]; e
     return { rows, errors };
   }
 
+  const delimiter = detectDelimiter(lines[0]);
+  const headerFields = parseCsvLine(lines[0], delimiter);
+  const { columnMap, errors: headerErrors } = mapHeaders(headerFields, CONTACT_HEADER_MAP, CONTACT_REQUIRED_HEADERS);
+
+  if (headerErrors.length > 0) {
+    return { rows, errors, headerErrors };
+  }
+
   for (let i = 1; i < lines.length; i++) {
-    const fields = parseCsvLine(lines[i]);
+    const fields = parseCsvLine(lines[i], delimiter);
     const rowNum = i + 1;
 
-    const rawPhone = sanitizeString(fields[0] ?? '');
+    const rawPhone = getField(fields, columnMap, 'telefone');
     if (!rawPhone) {
       errors.push({ row: rowNum, field: 'telefone', message: 'Phone is required' });
       continue;
@@ -121,16 +265,21 @@ export function parseContactsCsv(content: string): { rows: ParsedContactRow[]; e
       continue;
     }
 
-    const name = sanitizeString(fields[1] ?? '');
-    const email = sanitizeString(fields[2] ?? '');
-    const rawParticipations = sanitizeString(fields[3] ?? '');
-    const rawLastEdition = sanitizeString(fields[4] ?? '');
-    const rawAluno = sanitizeString(fields[5] ?? '').toLowerCase();
-    const product = sanitizeString(fields[6] ?? '');
-    const origin = sanitizeString(fields[7] ?? '');
-    const firstContactDate = sanitizeString(fields[8] ?? '');
-    const lastContactDate = sanitizeString(fields[9] ?? '');
-    const notes = sanitizeString(fields[10] ?? '');
+    const name = getField(fields, columnMap, 'nome');
+    const email = getField(fields, columnMap, 'email');
+    const rawParticipations = getField(fields, columnMap, 'quantidade_participacoes');
+    const rawLastEdition = getField(fields, columnMap, 'ultima_edicao');
+    const rawAluno = getField(fields, columnMap, 'aluno').toLowerCase();
+    const product = getField(fields, columnMap, 'produto');
+    const origin = getField(fields, columnMap, 'origem');
+    const firstContactDate = getField(fields, columnMap, 'data_primeiro_contato');
+    const lastContactDate = getField(fields, columnMap, 'data_ultimo_contato');
+    const notes = getField(fields, columnMap, 'observacoes');
+
+    if (email && !isValidEmail(email)) {
+      errors.push({ row: rowNum, field: 'email', message: 'Invalid email format' });
+      continue;
+    }
 
     const totalParticipations = rawParticipations ? parseInt(rawParticipations, 10) : 0;
     if (rawParticipations && isNaN(totalParticipations)) {
@@ -151,7 +300,7 @@ export function parseContactsCsv(content: string): { rows: ParsedContactRow[]; e
     rows.push({
       phone,
       name,
-      email,
+      email: email ? email.trim().toLowerCase() : '',
       totalParticipations,
       lastEdition,
       isStudent: rawAluno === 'sim',
@@ -166,7 +315,7 @@ export function parseContactsCsv(content: string): { rows: ParsedContactRow[]; e
   return { rows, errors };
 }
 
-export function parseParticipationsCsv(content: string): { rows: ParsedParticipationRow[]; errors: ParseError[] } {
+export function parseParticipationsCsv(content: string): { rows: ParsedParticipationRow[]; errors: ParseError[]; headerErrors?: string[] } {
   const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
   const rows: ParsedParticipationRow[] = [];
   const errors: ParseError[] = [];
@@ -175,11 +324,19 @@ export function parseParticipationsCsv(content: string): { rows: ParsedParticipa
     return { rows, errors };
   }
 
+  const delimiter = detectDelimiter(lines[0]);
+  const headerFields = parseCsvLine(lines[0], delimiter);
+  const { columnMap, errors: headerErrors } = mapHeaders(headerFields, PARTICIPATION_HEADER_MAP, PARTICIPATION_REQUIRED_HEADERS);
+
+  if (headerErrors.length > 0) {
+    return { rows, errors, headerErrors };
+  }
+
   for (let i = 1; i < lines.length; i++) {
-    const fields = parseCsvLine(lines[i]);
+    const fields = parseCsvLine(lines[i], delimiter);
     const rowNum = i + 1;
 
-    const rawPhone = sanitizeString(fields[0] ?? '');
+    const rawPhone = getField(fields, columnMap, 'telefone');
     if (!rawPhone) {
       errors.push({ row: rowNum, field: 'telefone', message: 'Phone is required' });
       continue;
@@ -191,7 +348,7 @@ export function parseParticipationsCsv(content: string): { rows: ParsedParticipa
       continue;
     }
 
-    const rawCampanha = sanitizeString(fields[1] ?? '');
+    const rawCampanha = getField(fields, columnMap, 'campanha');
     if (!rawCampanha) {
       errors.push({ row: rowNum, field: 'campanha', message: 'Campaign number is required' });
       continue;
@@ -203,11 +360,11 @@ export function parseParticipationsCsv(content: string): { rows: ParsedParticipa
       continue;
     }
 
-    const rawAluno = sanitizeString(fields[2] ?? '').toLowerCase();
-    const campaignStatus = sanitizeString(fields[3] ?? '');
-    const rawMarcadoSaiu = sanitizeString(fields[4] ?? '').toLowerCase();
-    const vcardLabels = sanitizeString(fields[5] ?? '');
-    const origin = sanitizeString(fields[6] ?? '');
+    const rawAluno = getField(fields, columnMap, 'aluno_atual').toLowerCase();
+    const campaignStatus = getField(fields, columnMap, 'status_na_campanha');
+    const rawMarcadoSaiu = getField(fields, columnMap, 'marcado_saiu').toLowerCase();
+    const vcardLabels = getField(fields, columnMap, 'rotulos_vcard');
+    const origin = getField(fields, columnMap, 'origem');
 
     rows.push({
       phone,
@@ -223,6 +380,8 @@ export function parseParticipationsCsv(content: string): { rows: ParsedParticipa
   return { rows, errors };
 }
 
+// ─── Preview ─────────────────────────────────────────────────────────
+
 export async function createImportPreview(
   db: PrismaClient,
   type: string,
@@ -232,17 +391,113 @@ export async function createImportPreview(
 ) {
   let parsedRows: (ParsedContactRow | ParsedParticipationRow)[];
   let parseErrors: ParseError[];
+  let headerErrors: string[] | undefined;
 
   if (type === 'contacts') {
     const result = parseContactsCsv(content);
     parsedRows = result.rows;
     parseErrors = result.errors;
+    headerErrors = result.headerErrors;
   } else if (type === 'participations') {
     const result = parseParticipationsCsv(content);
     parsedRows = result.rows;
     parseErrors = result.errors;
+    headerErrors = result.headerErrors;
   } else {
     throw new Error('Invalid import type');
+  }
+
+  if (headerErrors && headerErrors.length > 0) {
+    throw new Error(`Invalid CSV headers: ${headerErrors.join('; ')}`);
+  }
+
+  const stats: PreviewStats = {
+    totalLines: parsedRows.length + parseErrors.length,
+    validLines: parsedRows.length,
+    invalidLines: parseErrors.length,
+    newContacts: 0,
+    existingContacts: 0,
+    updatingContacts: 0,
+    studentsDetected: 0,
+    historicalCampaignsToCreate: 0,
+    participationsToCreate: 0,
+    duplicatesInFile: 0,
+    invalidPhones: parseErrors.filter(e => e.field === 'telefone').length,
+    divergences: [],
+    warnings: [],
+  };
+
+  if (type === 'contacts') {
+    const contactRows = parsedRows as ParsedContactRow[];
+    const phoneSeen = new Set<string>();
+
+    for (const row of contactRows) {
+      if (phoneSeen.has(row.phone)) {
+        stats.duplicatesInFile++;
+      }
+      phoneSeen.add(row.phone);
+      if (row.isStudent) stats.studentsDetected++;
+    }
+
+    const uniquePhones = [...phoneSeen];
+    const existingContacts = await db.contact.findMany({
+      where: { phone: { in: uniquePhones } },
+      select: { phone: true, totalParticipations: true },
+    });
+    const existingPhoneSet = new Set(existingContacts.map(c => c.phone!));
+
+    for (const phone of uniquePhones) {
+      if (existingPhoneSet.has(phone)) {
+        stats.existingContacts++;
+        stats.updatingContacts++;
+      } else {
+        stats.newContacts++;
+      }
+    }
+  } else {
+    const partRows = parsedRows as ParsedParticipationRow[];
+    const phoneSeen = new Set<string>();
+    const pairSeen = new Set<string>();
+    const campaignNumbers = new Set<number>();
+
+    for (const row of partRows) {
+      phoneSeen.add(row.phone);
+      const pairKey = `${row.phone}:${row.campaignNumber}`;
+      if (pairSeen.has(pairKey)) {
+        stats.duplicatesInFile++;
+      }
+      pairSeen.add(pairKey);
+      campaignNumbers.add(row.campaignNumber);
+      if (row.isCurrentStudent) stats.studentsDetected++;
+    }
+
+    const uniquePhones = [...phoneSeen];
+    const existingContacts = await db.contact.findMany({
+      where: { phone: { in: uniquePhones } },
+      select: { phone: true },
+    });
+    const existingPhoneSet = new Set(existingContacts.map(c => c.phone!));
+
+    for (const phone of uniquePhones) {
+      if (existingPhoneSet.has(phone)) {
+        stats.existingContacts++;
+      } else {
+        stats.newContacts++;
+      }
+    }
+
+    const existingCampaigns = await db.campaign.findMany({
+      where: { editionNumber: { in: [...campaignNumbers] } },
+      select: { editionNumber: true },
+    });
+    const existingEditions = new Set(existingCampaigns.map(c => c.editionNumber));
+    for (const num of campaignNumbers) {
+      if (!existingEditions.has(num)) {
+        stats.historicalCampaignsToCreate++;
+      }
+    }
+
+    stats.participationsToCreate = pairSeen.size;
   }
 
   const imp = await db.import.create({
@@ -295,8 +550,11 @@ export async function createImportPreview(
     errorCount: parseErrors.length,
     errors: parseErrors,
     preview,
+    stats,
   };
 }
+
+// ─── Contact Import ──────────────────────────────────────────────────
 
 export async function processContactsImport(db: PrismaClient, importId: string) {
   const imp = await db.import.findUnique({ where: { id: importId } });
@@ -329,25 +587,49 @@ export async function processContactsImport(db: PrismaClient, importId: string) 
             where: { phone: data.phone },
           });
 
-          const action = existing ? 'update' : 'create';
+          const action: 'create' | 'update' = existing ? 'update' : 'create';
+
+          const beforeState: Record<string, unknown> | null = existing
+            ? {
+                name: existing.name,
+                email: existing.email,
+                isStudent: existing.isStudent,
+                totalParticipations: existing.totalParticipations,
+                metadata: existing.metadata,
+                firstSeenAt: existing.firstSeenAt,
+                lastSeenAt: existing.lastSeenAt,
+              }
+            : null;
 
           const metadata: Record<string, string> = {};
           if (data.notes) metadata.observacoes = data.notes;
           if (data.origin) metadata.origem = data.origin;
           if (data.product) metadata.produto = data.product;
-          if (data.email) metadata.email = data.email;
+          if (data.lastEdition !== null) metadata.ultima_edicao_csv = String(data.lastEdition);
+          if (data.totalParticipations > 0) metadata.quantidade_participacoes_csv = String(data.totalParticipations);
 
           const hasMetadata = Object.keys(metadata).length > 0;
-          const mergedMetadata = existing?.metadata
-            ? { ...(existing.metadata as Record<string, unknown>), ...metadata }
+          const existingMeta = existing?.metadata as Record<string, unknown> | null;
+          const mergedMetadata = existingMeta
+            ? { ...existingMeta, ...metadata }
             : hasMetadata ? metadata : null;
 
+          // aluno=true never downgraded
           const isStudent = data.isStudent ? true : (existing?.isStudent ?? false);
 
           const resolvedName = data.name || (existing?.name ?? '');
+
+          // CSV totalParticipations is stored as legacy audit in metadata;
+          // the Contact.totalParticipations field holds whatever was there
+          // or the CSV value if no participations exist yet
           const resolvedParticipations = data.totalParticipations > 0
             ? data.totalParticipations
             : (existing?.totalParticipations ?? 0);
+
+          // email: persist to Contact.email column, not metadata
+          const resolvedEmail = data.email
+            ? data.email
+            : (existing?.email ?? null);
 
           let firstSeenAt: Date | undefined;
           if (data.firstContactDate) {
@@ -365,34 +647,47 @@ export async function processContactsImport(db: PrismaClient, importId: string) 
             ? (mergedMetadata as Prisma.InputJsonValue)
             : undefined;
 
-          await tx.contact.upsert({
+          const contactData = {
+            name: resolvedName,
+            normalizedPhone: data.phone,
+            isStudent,
+            totalParticipations: resolvedParticipations,
+            ...(resolvedEmail !== null ? { email: resolvedEmail } : {}),
+            ...(metaValue !== undefined ? { metadata: metaValue } : {}),
+            ...(firstSeenAt ? { firstSeenAt } : {}),
+            ...(lastSeenAt ? { lastSeenAt } : {}),
+          };
+
+          const result = await tx.contact.upsert({
             where: { phone: data.phone },
             create: {
               phone: data.phone,
-              name: resolvedName,
-              normalizedPhone: data.phone,
-              isStudent,
-              totalParticipations: resolvedParticipations,
-              ...(metaValue !== undefined ? { metadata: metaValue } : {}),
-              ...(firstSeenAt ? { firstSeenAt } : {}),
-              ...(lastSeenAt ? { lastSeenAt } : {}),
+              ...contactData,
             },
-            update: {
-              name: resolvedName,
-              normalizedPhone: data.phone,
-              isStudent,
-              totalParticipations: resolvedParticipations,
-              ...(metaValue !== undefined ? { metadata: metaValue } : {}),
-              ...(firstSeenAt ? { firstSeenAt } : {}),
-              ...(lastSeenAt ? { lastSeenAt } : {}),
-            },
+            update: contactData,
           });
+
+          const afterState: Record<string, unknown> = {
+            name: result.name,
+            email: result.email,
+            isStudent: result.isStudent,
+            totalParticipations: result.totalParticipations,
+            metadata: result.metadata,
+            firstSeenAt: result.firstSeenAt,
+            lastSeenAt: result.lastSeenAt,
+          };
 
           await tx.importRow.update({
             where: { id: row.id },
             data: {
               status: 'success',
-              data: { ...data, _action: action },
+              data: {
+                ...data,
+                _action: action,
+                _contactId: result.id,
+                _beforeState: beforeState as Prisma.InputJsonValue | null,
+                _afterState: afterState as Prisma.InputJsonValue,
+              } as Prisma.InputJsonValue,
             },
           });
 
@@ -419,6 +714,8 @@ export async function processContactsImport(db: PrismaClient, importId: string) 
     },
   });
 }
+
+// ─── Participation Import ────────────────────────────────────────────
 
 export async function processParticipationsImport(db: PrismaClient, importId: string) {
   const imp = await db.import.findUnique({ where: { id: importId } });
@@ -451,8 +748,19 @@ export async function processParticipationsImport(db: PrismaClient, importId: st
             where: { phone: data.phone },
           });
 
-          const contactAction = existingContact ? 'update' : 'create';
+          const contactAction: 'create' | 'update' = existingContact ? 'update' : 'create';
 
+          const contactBeforeState: Record<string, unknown> | null = existingContact
+            ? {
+                name: existingContact.name,
+                email: existingContact.email,
+                isStudent: existingContact.isStudent,
+                totalParticipations: existingContact.totalParticipations,
+                metadata: existingContact.metadata,
+              }
+            : null;
+
+          // aluno=true never downgraded
           const contact = await tx.contact.upsert({
             where: { phone: data.phone },
             create: {
@@ -469,7 +777,7 @@ export async function processParticipationsImport(db: PrismaClient, importId: st
             where: { editionNumber: data.campaignNumber },
           });
 
-          const campaignAction = existingCampaign ? 'existing' : 'create';
+          const campaignAction: 'existing' | 'create' = existingCampaign ? 'existing' : 'create';
 
           let campaign;
           if (existingCampaign) {
@@ -477,8 +785,8 @@ export async function processParticipationsImport(db: PrismaClient, importId: st
           } else {
             campaign = await tx.campaign.create({
               data: {
-                name: `Edicao ${data.campaignNumber}`,
-                slug: `edicao-${data.campaignNumber}`,
+                name: `Meteórico ${data.campaignNumber}`,
+                slug: `meteorico-${data.campaignNumber}`,
                 editionNumber: data.campaignNumber,
                 status: 'historical',
                 createdBy: imp.createdBy,
@@ -495,7 +803,15 @@ export async function processParticipationsImport(db: PrismaClient, importId: st
             },
           });
 
-          const participationAction = existingParticipation ? 'update' : 'create';
+          const participationAction: 'create' | 'update' = existingParticipation ? 'update' : 'create';
+
+          const participationBeforeState: Record<string, unknown> | null = existingParticipation
+            ? {
+                status: existingParticipation.status,
+                classification: existingParticipation.classification,
+                metadata: existingParticipation.metadata,
+              }
+            : null;
 
           const participationMetadata: Record<string, unknown> = {};
           if (data.markedLeft) participationMetadata.marcado_saiu = true;
@@ -511,7 +827,7 @@ export async function processParticipationsImport(db: PrismaClient, importId: st
             ? (mergedParticipationMeta as Prisma.InputJsonValue)
             : undefined;
 
-          await tx.campaignParticipation.upsert({
+          const participation = await tx.campaignParticipation.upsert({
             where: {
               contactId_campaignId: {
                 contactId: contact.id,
@@ -543,7 +859,10 @@ export async function processParticipationsImport(db: PrismaClient, importId: st
                 _participationAction: participationAction,
                 _contactId: contact.id,
                 _campaignId: campaign.id,
-              },
+                _participationId: participation.id,
+                _contactBeforeState: contactBeforeState as Prisma.InputJsonValue | null,
+                _participationBeforeState: participationBeforeState as Prisma.InputJsonValue | null,
+              } as Prisma.InputJsonValue,
             },
           });
 
@@ -571,6 +890,67 @@ export async function processParticipationsImport(db: PrismaClient, importId: st
   });
 }
 
+// ─── Divergence Report ───────────────────────────────────────────────
+
+export async function generateDivergenceReport(db: PrismaClient, importId: string): Promise<Divergence[]> {
+  const imp = await db.import.findUnique({ where: { id: importId } });
+  if (!imp || imp.status !== 'done') return [];
+
+  const divergences: Divergence[] = [];
+
+  if (imp.type === 'contacts') {
+    const successRows = await db.importRow.findMany({
+      where: { importId, status: 'success' },
+    });
+
+    for (const row of successRows) {
+      const data = row.data as Record<string, unknown>;
+      const phone = data.phone as string;
+      const csvParticipations = data.totalParticipations as number;
+      const csvLastEdition = data.lastEdition as number | null;
+
+      const contact = await db.contact.findUnique({
+        where: { phone },
+        include: { participations: { include: { campaign: true } } },
+      });
+
+      if (!contact) continue;
+
+      const confirmedParticipations = contact.participations.length;
+      if (csvParticipations > 0 && confirmedParticipations > 0 && csvParticipations !== confirmedParticipations) {
+        divergences.push({
+          phone,
+          type: 'quantidade_participacoes',
+          csvValue: csvParticipations,
+          calculatedValue: confirmedParticipations,
+          action: 'Fonte de verdade: histórico confirmado no banco',
+        });
+      }
+
+      if (csvLastEdition !== null && contact.participations.length > 0) {
+        const maxEdition = Math.max(
+          ...contact.participations
+            .map(p => p.campaign.editionNumber)
+            .filter((n): n is number => n !== null),
+        );
+        if (maxEdition > 0 && csvLastEdition !== maxEdition) {
+          divergences.push({
+            phone,
+            type: 'ultima_edicao',
+            csvValue: csvLastEdition,
+            calculatedValue: maxEdition,
+            action: 'Fonte de verdade: MAX edição confirmada no banco',
+          });
+        }
+      }
+    }
+  }
+
+  return divergences;
+}
+
+// ─── Rollback ────────────────────────────────────────────────────────
+
 export async function rollbackImport(db: PrismaClient, importId: string) {
   const imp = await db.import.findUnique({ where: { id: importId } });
   if (!imp) throw new Error('Import not found');
@@ -587,6 +967,7 @@ export async function rollbackImport(db: PrismaClient, importId: string) {
         const data = row.data as Record<string, unknown>;
         const action = data._action as string;
         const phone = data.phone as string;
+        const beforeState = data._beforeState as Record<string, unknown> | null;
 
         if (action === 'create') {
           const contact = await tx.contact.findUnique({ where: { phone } });
@@ -594,6 +975,19 @@ export async function rollbackImport(db: PrismaClient, importId: string) {
             await tx.campaignParticipation.deleteMany({ where: { contactId: contact.id } });
             await tx.contact.delete({ where: { phone } });
           }
+        } else if (action === 'update' && beforeState) {
+          await tx.contact.update({
+            where: { phone },
+            data: {
+              name: beforeState.name as string,
+              email: (beforeState.email as string | null) ?? null,
+              isStudent: beforeState.isStudent as boolean,
+              totalParticipations: beforeState.totalParticipations as number,
+              metadata: beforeState.metadata as Prisma.InputJsonValue ?? Prisma.JsonNull,
+              ...(beforeState.firstSeenAt ? { firstSeenAt: new Date(beforeState.firstSeenAt as string) } : {}),
+              ...(beforeState.lastSeenAt ? { lastSeenAt: new Date(beforeState.lastSeenAt as string) } : {}),
+            },
+          });
         }
       }
     } else if (imp.type === 'participations') {
@@ -604,11 +998,23 @@ export async function rollbackImport(db: PrismaClient, importId: string) {
         const campaignAction = data._campaignAction as string;
         const contactId = data._contactId as string;
         const campaignId = data._campaignId as string;
+        const contactBeforeState = data._contactBeforeState as Record<string, unknown> | null;
+        const participationBeforeState = data._participationBeforeState as Record<string, unknown> | null;
 
         if (participationAction === 'create') {
           await tx.campaignParticipation.deleteMany({
             where: { contactId, campaignId },
           });
+        } else if (participationAction === 'update' && participationBeforeState) {
+          const participationId = data._participationId as string;
+          await tx.campaignParticipation.update({
+            where: { id: participationId },
+            data: {
+              status: participationBeforeState.status as string,
+              classification: participationBeforeState.classification as string,
+              metadata: participationBeforeState.metadata as Prisma.InputJsonValue ?? Prisma.JsonNull,
+            },
+          }).catch(() => {});
         }
 
         if (campaignAction === 'create') {
@@ -627,6 +1033,17 @@ export async function rollbackImport(db: PrismaClient, importId: string) {
           if (remainingParticipations === 0) {
             await tx.contact.delete({ where: { id: contactId } }).catch(() => {});
           }
+        } else if (contactAction === 'update' && contactBeforeState) {
+          await tx.contact.update({
+            where: { id: contactId },
+            data: {
+              name: contactBeforeState.name as string,
+              email: (contactBeforeState.email as string | null) ?? null,
+              isStudent: contactBeforeState.isStudent as boolean,
+              totalParticipations: contactBeforeState.totalParticipations as number,
+              metadata: contactBeforeState.metadata as Prisma.InputJsonValue ?? Prisma.JsonNull,
+            },
+          }).catch(() => {});
         }
       }
     }
@@ -637,6 +1054,76 @@ export async function rollbackImport(db: PrismaClient, importId: string) {
     });
   });
 }
+
+// ─── Reconcile participations (post-import) ──────────────────────────
+
+export async function reconcileParticipationCounts(db: PrismaClient, importId: string): Promise<Divergence[]> {
+  const imp = await db.import.findUnique({ where: { id: importId } });
+  if (!imp || imp.status !== 'done') return [];
+
+  const successRows = await db.importRow.findMany({
+    where: { importId, status: 'success' },
+  });
+
+  const phoneSet = new Set<string>();
+  for (const row of successRows) {
+    const data = row.data as Record<string, unknown>;
+    phoneSet.add(data.phone as string);
+  }
+
+  const divergences: Divergence[] = [];
+
+  for (const phone of phoneSet) {
+    const contact = await db.contact.findUnique({
+      where: { phone },
+      include: { participations: { include: { campaign: true } } },
+    });
+
+    if (!contact) continue;
+
+    const distinctCampaigns = contact.participations.length;
+    if (distinctCampaigns > 0 && contact.totalParticipations !== distinctCampaigns) {
+      const csvValue = contact.totalParticipations;
+
+      await db.contact.update({
+        where: { id: contact.id },
+        data: { totalParticipations: distinctCampaigns },
+      });
+
+      divergences.push({
+        phone,
+        type: 'quantidade_participacoes',
+        csvValue,
+        calculatedValue: distinctCampaigns,
+        action: 'Atualizado para contagem real de campanhas distintas',
+      });
+    }
+
+    const editions = contact.participations
+      .map(p => p.campaign.editionNumber)
+      .filter((n): n is number => n !== null);
+
+    if (editions.length > 0) {
+      const maxEdition = Math.max(...editions);
+      const meta = contact.metadata as Record<string, unknown> | null;
+      const csvLastEdition = meta?.ultima_edicao_csv ? Number(meta.ultima_edicao_csv) : null;
+
+      if (csvLastEdition !== null && csvLastEdition !== maxEdition) {
+        divergences.push({
+          phone,
+          type: 'ultima_edicao',
+          csvValue: csvLastEdition,
+          calculatedValue: maxEdition,
+          action: 'Fonte de verdade: MAX edição confirmada no banco',
+        });
+      }
+    }
+  }
+
+  return divergences;
+}
+
+// ─── Queries ─────────────────────────────────────────────────────────
 
 export async function getImport(db: PrismaClient, importId: string) {
   const imp = await db.import.findUnique({ where: { id: importId } });
