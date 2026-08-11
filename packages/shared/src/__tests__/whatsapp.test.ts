@@ -227,4 +227,10 @@ describe('staging allowlist helpers', () => {
       assertStagingRecipientAllowed('5591888877777', 'staging', '5591999990001'),
     ).toThrow(OutboundBlockedError);
   });
+
+  it('matches the exact Meta wa_id alias of the same Brazilian mobile number', () => {
+    expect(assertStagingRecipientAllowed('559193111778', 'staging', '5591993111778')).toBe(
+      '5591993111778',
+    );
+  });
 });

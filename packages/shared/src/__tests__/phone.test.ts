@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizePhone, maskPhone } from '../phone.js';
+import { normalizePhone, normalizeWhatsAppPhone, maskPhone } from '../phone.js';
 
 describe('normalizePhone', () => {
   it('normalizes a valid Brazilian mobile number with country code', () => {
@@ -32,6 +32,17 @@ describe('normalizePhone', () => {
 
   it('returns null for non-numeric input', () => {
     expect(normalizePhone('abc')).toBeNull();
+  });
+});
+
+describe('normalizeWhatsAppPhone', () => {
+  it('canonicalizes the Meta wa_id form of a Brazilian mobile number', () => {
+    expect(normalizeWhatsAppPhone('559193111778')).toBe('5591993111778');
+    expect(normalizeWhatsAppPhone('+55 (91) 99311-1778')).toBe('5591993111778');
+  });
+
+  it('does not insert a ninth digit into a Brazilian landline', () => {
+    expect(normalizeWhatsAppPhone('559133334444')).toBe('559133334444');
   });
 });
 

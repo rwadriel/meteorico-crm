@@ -23,6 +23,24 @@ export function normalizePhone(input: string): string | null {
 }
 
 /**
+ * Canonicalizes Brazilian WhatsApp identities to the current mobile E.164 form.
+ *
+ * Meta can deliver a Brazilian mobile wa_id without the ninth digit. We only
+ * insert it for a 12-digit Brazilian identity whose local number starts in the
+ * mobile range (6-9). Landlines and non-Brazilian numbers remain unchanged.
+ */
+export function normalizeWhatsAppPhone(input: string): string | null {
+  const normalized = normalizePhone(input);
+  if (!normalized) return null;
+
+  if (/^55\d{2}[6-9]\d{7}$/.test(normalized)) {
+    return `${normalized.slice(0, 4)}9${normalized.slice(4)}`;
+  }
+
+  return normalized;
+}
+
+/**
  * Masks middle digits for logging purposes.
  * Example: 5591988889999 → 5591****9999
  */

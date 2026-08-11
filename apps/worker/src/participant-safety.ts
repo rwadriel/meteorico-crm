@@ -1,7 +1,7 @@
-import { normalizePhone, parseStagingAllowlist } from '@meteorico/shared';
+import { normalizeWhatsAppPhone, parseStagingAllowlist } from '@meteorico/shared';
 
 export function normalizeAllowedManagerPhone(phone: string | null | undefined): string | null {
-  const normalized = normalizePhone(phone ?? '');
+  const normalized = normalizeWhatsAppPhone(phone ?? '');
   if (!normalized) return null;
 
   if ((process.env.DEPLOYMENT_ENV ?? 'development').toLowerCase() !== 'staging') {

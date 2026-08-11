@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@meteorico/database';
-import { normalizePhone } from '@meteorico/shared';
+import { normalizeWhatsAppPhone } from '@meteorico/shared';
 import type {
   IncomingMessage,
   DeliveryStatus,
@@ -45,7 +45,7 @@ export async function handleIncomingMessage(
     };
   }
 
-  const phone = normalizePhone(incoming.from);
+  const phone = normalizeWhatsAppPhone(incoming.from);
   if (!phone) throw new Error('Invalid sender phone');
 
   let contact = await db.contact.findFirst({

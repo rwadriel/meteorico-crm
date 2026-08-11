@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { normalizePhone } from './phone.js';
+import { normalizeWhatsAppPhone } from './phone.js';
 
 export interface MessagePayload {
   to: string;
@@ -98,7 +98,7 @@ export function createNumberedFallback(buttons: Array<{ id: string; label: strin
 export function parseStagingAllowlist(value: string | string[] | undefined): Set<string> {
   const entries = Array.isArray(value) ? value : (value ?? '').split(',');
   const normalized = entries
-    .map((entry) => normalizePhone(entry.trim()))
+    .map((entry) => normalizeWhatsAppPhone(entry.trim()))
     .filter((entry): entry is string => entry !== null);
   return new Set(normalized);
 }
@@ -108,7 +108,7 @@ export function assertStagingRecipientAllowed(
   deploymentEnvironment: string,
   allowlist: string | string[] | undefined,
 ): string {
-  const normalized = normalizePhone(phone);
+  const normalized = normalizeWhatsAppPhone(phone);
   if (!normalized) throw new Error('Invalid recipient phone');
 
   if (deploymentEnvironment.toLowerCase() === 'staging') {
