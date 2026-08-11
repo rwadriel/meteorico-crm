@@ -1,6 +1,8 @@
 import type { PrismaClient } from '@meteorico/database';
+import { Prisma } from '@meteorico/database';
 import type { WhatsAppManagerProvider, WmSnapshotGroup } from '../adapters/whatsapp-manager.js';
 import { createWorkerLogger } from '../logger.js';
+import { normalizeAllowedManagerPhone } from '../participant-safety.js';
 
 const logger = createWorkerLogger();
 
@@ -47,7 +49,7 @@ export async function reconcileSnapshots(
 
 async function reconcileGroup(
   db: PrismaClient,
-  group: { id: string; campaignId: string },
+  group: { id: string; campaignId: string; category: string },
   snapshot: WmSnapshotGroup,
   result: ReconciliationResult,
 ) {
@@ -55,7 +57,8 @@ async function reconcileGroup(
 
   const snapshotPhones = new Set<string>();
   for (const member of snapshot.members) {
-    if (member.number) snapshotPhones.add(member.number);
+    const phone = normalizeAllowedManagerPhone(member.number);
+    if (phone) snapshotPhones.add(phone);
   }
 
   const activeMemberships = await db.groupMembership.findMany({
@@ -65,21 +68,25 @@ async function reconcileGroup(
 
   const activePhones = new Map<string, string>();
   for (const m of activeMemberships) {
-    if (m.contact.phone) {
-      activePhones.set(m.contact.phone, m.id);
+    const phone = normalizeAllowedManagerPhone(m.contact.normalizedPhone ?? m.contact.phone);
+    if (phone) {
+      activePhones.set(phone, m.id);
     }
   }
 
   for (const member of snapshot.members) {
-    if (!member.number) continue;
-    if (activePhones.has(member.number)) continue;
+    const phone = normalizeAllowedManagerPhone(member.number);
+    if (!phone) continue;
+    if (activePhones.has(phone)) continue;
 
-    let contact = await db.contact.findUnique({ where: { phone: member.number } });
+    let contact = await db.contact.findFirst({
+      where: { OR: [{ phone }, { normalizedPhone: phone }] },
+    });
     if (!contact) {
       contact = await db.contact.create({
         data: {
-          phone: member.number,
-          normalizedPhone: member.number,
+          phone,
+          normalizedPhone: phone,
           name: member.name || '',
           firstSeenAt: new Date(),
           lastSeenAt: new Date(),
@@ -88,7 +95,7 @@ async function reconcileGroup(
       result.contactsCreated++;
     }
 
-    await db.groupMembership.create({
+    const membership = await db.groupMembership.create({
       data: {
         groupId: group.id,
         contactId: contact.id,
@@ -107,13 +114,17 @@ async function reconcileGroup(
     });
 
     if (!existingParticipation) {
-      await db.campaignParticipation.create({
+      const participation = await db.campaignParticipation.create({
         data: {
           contactId: contact.id,
           campaignId: group.campaignId,
           groupId: group.id,
           status: 'active',
-          classification: 'new',
+          classification: classificationFromCategory(group.category),
+          metadata: {
+            joinConfirmedAt: new Date().toISOString(),
+            confirmationSource: 'whatsapp-manager-snapshot',
+          } as Prisma.InputJsonValue,
         },
       });
 
@@ -121,12 +132,40 @@ async function reconcileGroup(
         where: { id: contact.id },
         data: { totalParticipations: { increment: 1 } },
       });
+
+      await db.auditLog.create({
+        data: {
+          action: 'participation.confirmed',
+          resource: 'campaign_participations',
+          resourceId: participation.id,
+          newValue: {
+            contactId: contact.id,
+            campaignId: group.campaignId,
+            groupId: group.id,
+            source: 'snapshot',
+          } as Prisma.InputJsonValue,
+        },
+      });
     } else if (existingParticipation.status === 'left') {
       await db.campaignParticipation.update({
         where: { id: existingParticipation.id },
         data: { status: 'active', groupId: group.id },
       });
     }
+
+    await db.auditLog.create({
+      data: {
+        action: 'group.join',
+        resource: 'group_memberships',
+        resourceId: membership.id,
+        newValue: {
+          contactId: contact.id,
+          campaignId: group.campaignId,
+          groupId: group.id,
+          source: 'snapshot',
+        } as Prisma.InputJsonValue,
+      },
+    });
 
     result.membershipsAdded++;
   }
@@ -146,4 +185,8 @@ async function reconcileGroup(
     where: { id: group.id },
     data: { currentCount: snapshotPhones.size },
   });
+}
+
+function classificationFromCategory(category: string): string {
+  return ['novo', 'reparticipante', 'veterano'].includes(category) ? category : 'new';
 }

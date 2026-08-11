@@ -2,7 +2,8 @@ import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { getClient } from '@meteorico/database';
 import { handleIncomingMessage, handleDeliveryStatus } from '../services/conversation.js';
-import { classifyContact } from '../services/classification.js';
+import { processInboundCampaign } from '../services/campaign-runtime.js';
+import { writeAuditLog } from '../services/audit.js';
 import { getMockProvider } from '../providers/messaging-mock.js';
 import { createMetaCloudProvider } from '../providers/messaging-provider.js';
 import type { MessagingProvider, WebhookPayload } from '../providers/messaging.js';
@@ -127,12 +128,16 @@ async function processWebhookPayloads(
   isNew: boolean;
   conversationIds: string[];
   classifications: string[];
+  outboundQueued: number;
+  outboundDuplicates: number;
 }> {
   const db = getClient();
   let processed = 0;
   let duplicates = 0;
   const conversationIds: string[] = [];
   const classifications: string[] = [];
+  let outboundQueued = 0;
+  let outboundDuplicates = 0;
   let isNew = false;
 
   for (const payload of payloads) {
@@ -155,16 +160,26 @@ async function processWebhookPayloads(
       conversationIds.push(messageResult.conversationId);
       isNew = isNew || messageResult.isNew;
 
-      const campaign = await db.campaign.findFirst({
-        where: { status: 'active' },
-        orderBy: { createdAt: 'desc' },
+      await writeAuditLog(db, {
+        action: 'inbound.received',
+        resource: 'conversations',
+        resourceId: messageResult.conversationId,
+        newValue: {
+          contactId: messageResult.contactId,
+          provider: provider.name,
+          messageType: payload.message.messageType,
+        },
       });
-      if (campaign) {
-        const classification = await classifyContact(db, messageResult.contactId, campaign.id, {
-          allocateGroup: false,
-        });
-        classifications.push(classification.classification);
+
+      const runtime = await processInboundCampaign(db, {
+        contactId: messageResult.contactId,
+        conversationId: messageResult.conversationId,
+      });
+      if (runtime.classification) {
+        classifications.push(runtime.classification);
       }
+      if (runtime.outboundQueued) outboundQueued += 1;
+      if (runtime.duplicateOutbound) outboundDuplicates += 1;
 
       await db.processedEvent.upsert({
         where: {
@@ -220,6 +235,8 @@ async function processWebhookPayloads(
     isNew,
     conversationIds,
     classifications,
+    outboundQueued,
+    outboundDuplicates,
   };
 }
 

@@ -279,6 +279,17 @@ export async function messagingRoutes(app: FastifyInstance) {
         return reply.status(409).send({ outboundRecordId: record.id, status: 'skipped' });
       }
 
+      if (process.env.WHATSAPP_OUTBOUND_ENABLED !== 'true') {
+        const record = await db.outboundRecord.create({
+          data: { ...baseRecord, status: 'blocked', lastError: 'outbound_disabled' },
+        });
+        return reply.status(503).send({
+          outboundRecordId: record.id,
+          status: 'blocked',
+          error: 'Outbound messaging is disabled',
+        });
+      }
+
       const phone = conversation.contact.normalizedPhone ?? conversation.contact.phone ?? '';
       try {
         assertStagingRecipientAllowed(

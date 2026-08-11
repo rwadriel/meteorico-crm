@@ -37,6 +37,7 @@ repositorio e o `.env.example` documentam apenas os nomes.
 |----------|---------|-----------|------------------------|
 | DEPLOYMENT_ENV | api, worker | Ambiente de execucao; use `staging` para ativar a barreira de destinatarios | Sim |
 | WHATSAPP_PRIVATE_PROVIDER | api, worker | Adapter de mensageria; `meta_cloud` ativa a API oficial | Sim |
+| WHATSAPP_OUTBOUND_ENABLED | api, worker | Trava fail-closed; somente `true` permite enfileirar e consumir outbound | Sim (`false` fora de uma janela de envio aprovada) |
 | META_WHATSAPP_ACCESS_TOKEN | api, worker | Token do System User com permissoes minimas de WhatsApp | Sim |
 | META_WHATSAPP_PHONE_NUMBER_ID | api, worker | Identificador do numero da Cloud API | Sim |
 | META_WHATSAPP_WABA_ID | api, worker | Identificador da conta WhatsApp Business autorizada | Sim |
@@ -56,5 +57,6 @@ API, que recebe o webhook. API e worker aplicam a allowlist separadamente.
 - EDUZZ_WEBHOOK_SECRET e obrigatorio em staging/producao; sem ele, webhook retorna 503
 - META_WHATSAPP_ACCESS_TOKEN, META_APP_SECRET e META_WHATSAPP_VERIFY_TOKEN nunca devem ser logados
 - WHATSAPP_STAGING_ALLOWLIST deve permanecer restrita aos numeros de teste em staging
+- WHATSAPP_OUTBOUND_ENABLED deve permanecer `false` ate existir autorizacao explicita para a janela de envio
 - Tokens de integracao sao enviados apenas em headers Authorization
 - XAI_API_KEY nunca e logada (redact do Pino)

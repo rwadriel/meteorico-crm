@@ -36,12 +36,14 @@ export async function classifyContact(
   options: {
     simulate?: boolean;
     allocateGroup?: boolean;
+    persist?: boolean;
     rules?: Partial<ClassificationRules>;
   } = {},
 ): Promise<ClassificationResult> {
   const rules = { ...DEFAULT_RULES, ...options.rules };
   const facts: ClassificationFact[] = [];
   const simulate = options.simulate ?? false;
+  const persist = options.persist ?? true;
 
   const contact = await db.contact.findUnique({ where: { id: contactId } });
   if (!contact) throw new Error('Contact not found');
@@ -100,7 +102,9 @@ export async function classifyContact(
       const groupId =
         options.allocateGroup === false ? null : await allocateGroup(db, campaignId, 'aluno');
       result.groupId = groupId;
-      await persistClassification(db, contactId, campaignId, result);
+      if (persist) {
+        await persistClassification(db, contactId, campaignId, result);
+      }
     }
     return result;
   }
@@ -159,7 +163,9 @@ export async function classifyContact(
     const groupId =
       options.allocateGroup === false ? null : await allocateGroup(db, campaignId, classification);
     result.groupId = groupId;
-    await persistClassification(db, contactId, campaignId, result);
+    if (persist) {
+      await persistClassification(db, contactId, campaignId, result);
+    }
   }
 
   return result;

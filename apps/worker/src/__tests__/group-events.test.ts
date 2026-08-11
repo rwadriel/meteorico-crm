@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { PrismaClient } from '@meteorico/database';
 import { processEvent, processEventBatch } from '../processors/group-events.js';
-import type { WmEvent } from '../adapters/whatsapp-manager.js';
+import { reconcileSnapshots } from '../processors/snapshot-reconciliation.js';
+import type { WhatsAppManagerProvider, WmEvent } from '../adapters/whatsapp-manager.js';
 
 const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgresql://meteorico:meteorico_dev@localhost:5432/meteorico_crm_test';
 
@@ -23,6 +24,7 @@ function makeEvent(overrides: Partial<WmEvent> = {}): WmEvent {
 }
 
 async function cleanDb(db: PrismaClient) {
+  await db.auditLog.deleteMany();
   await db.groupEvent.deleteMany();
   await db.processedEvent.deleteMany();
   await db.groupMembership.deleteMany();
@@ -99,6 +101,10 @@ describe('Group Events Processor', () => {
     });
     expect(participation).not.toBeNull();
     expect(participation!.status).toBe('active');
+    expect(participation!.classification).toBe('novo');
+    expect(participation!.metadata).toMatchObject({
+      confirmationSource: 'whatsapp-manager',
+    });
 
     const group = await db.group.findUnique({ where: { id: groupId } });
     expect(group!.currentCount).toBe(1);
@@ -230,13 +236,105 @@ describe('Group Events Processor', () => {
     const orphanGroup = await db.group.findFirst({
       where: { whatsappId: 'wid-unknown' },
     });
-    expect(orphanGroup).not.toBeNull();
-    expect(orphanGroup!.isActive).toBe(false);
+    expect(orphanGroup).toBeNull();
 
     const orphanCampaign = await db.campaign.findFirst({
       where: { slug: '_orphan-events' },
     });
-    expect(orphanCampaign).not.toBeNull();
+    expect(orphanCampaign).toBeNull();
+    expect(await db.contact.count()).toBe(0);
+  });
+
+  it('normalizes manager phone formatting and reuses the inbound contact', async () => {
+    const contact = await db.contact.create({
+      data: {
+        phone: '5591999990001',
+        normalizedPhone: '5591999990001',
+        name: 'Inbound Contact',
+      },
+    });
+
+    await processEvent(db, makeEvent({
+      event_id: 'normalized-phone',
+      participants: [
+        { id: 'p1', number: '+55 (91) 99999-0001', name: 'Manager Name', isSaved: false },
+      ],
+    }));
+
+    expect(await db.contact.count()).toBe(1);
+    const membership = await db.groupMembership.findFirst({ where: { contactId: contact.id } });
+    expect(membership).not.toBeNull();
+  });
+
+  it('ignores every Manager participant outside the staging allowlist', async () => {
+    const previousDeployment = process.env.DEPLOYMENT_ENV;
+    const previousAllowlist = process.env.WHATSAPP_STAGING_ALLOWLIST;
+    process.env.DEPLOYMENT_ENV = 'staging';
+    process.env.WHATSAPP_STAGING_ALLOWLIST = '5591999990001';
+
+    try {
+      await processEvent(db, makeEvent({
+        event_id: 'staging-scope',
+        participants: [
+          { id: 'owner', number: '5591888880002', name: 'Group owner', isSaved: true },
+          { id: 'controlled', number: '+55 (91) 99999-0001', name: 'Controlled', isSaved: false },
+        ],
+      }));
+
+      expect(await db.contact.count()).toBe(1);
+      expect(await db.contact.findUnique({ where: { phone: '5591999990001' } })).not.toBeNull();
+      expect(await db.contact.findUnique({ where: { phone: '5591888880002' } })).toBeNull();
+      expect(await db.groupMembership.count()).toBe(1);
+      const recordedEvent = await db.groupEvent.findFirst({ where: { groupId } });
+      expect(recordedEvent?.rawPayload).toMatchObject({
+        participants: [{ number: '+55 (91) 99999-0001' }],
+      });
+    } finally {
+      restoreEnv('DEPLOYMENT_ENV', previousDeployment);
+      restoreEnv('WHATSAPP_STAGING_ALLOWLIST', previousAllowlist);
+    }
+  });
+
+  it('reconciles only the controlled snapshot participant and ignores the group owner', async () => {
+    const previousDeployment = process.env.DEPLOYMENT_ENV;
+    const previousAllowlist = process.env.WHATSAPP_STAGING_ALLOWLIST;
+    process.env.DEPLOYMENT_ENV = 'staging';
+    process.env.WHATSAPP_STAGING_ALLOWLIST = '5591999990001';
+    const provider: WhatsAppManagerProvider = {
+      health: async () => ({ ok: true, lastSeq: 0, events: 0 }),
+      events: async () => ({ events: [], nextSince: 0, hasMore: false, lastSeq: 0 }),
+      snapshots: async () => ({
+        groups: [{
+          groupId: 'wid-group-1',
+          groupName: 'Grupo Teste',
+          updatedAt: new Date().toISOString(),
+          members: [
+            { id: 'owner', number: '5591888880002', name: 'Group owner', isSaved: true },
+            { id: 'controlled', number: '+55 (91) 99999-0001', name: 'Controlled', isSaved: false },
+          ],
+        }],
+      }),
+    };
+
+    try {
+      const result = await reconcileSnapshots(db, provider);
+
+      expect(result).toMatchObject({
+        groupsReconciled: 1,
+        contactsCreated: 1,
+        membershipsAdded: 1,
+      });
+      expect(await db.contact.count()).toBe(1);
+      expect(await db.contact.findUnique({ where: { phone: '5591999990001' } })).not.toBeNull();
+      expect(await db.contact.findUnique({ where: { phone: '5591888880002' } })).toBeNull();
+      expect(await db.campaignParticipation.count({ where: { campaignId } })).toBe(1);
+      expect(await db.group.findUnique({ where: { id: groupId } })).toMatchObject({
+        currentCount: 1,
+      });
+    } finally {
+      restoreEnv('DEPLOYMENT_ENV', previousDeployment);
+      restoreEnv('WHATSAPP_STAGING_ALLOWLIST', previousAllowlist);
+    }
   });
 
   it('skips non-membership events (baseline, grupo_criado, alteracao)', async () => {
@@ -313,3 +411,8 @@ describe('Group Events Processor', () => {
     expect(contact!.name).toBe('First Name');
   });
 });
+
+function restoreEnv(key: string, value: string | undefined) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}

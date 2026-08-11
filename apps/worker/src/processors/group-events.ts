@@ -2,6 +2,7 @@ import type { PrismaClient } from '@meteorico/database';
 import { Prisma } from '@meteorico/database';
 import type { WmEvent, WmParticipant } from '../adapters/whatsapp-manager.js';
 import { createWorkerLogger } from '../logger.js';
+import { normalizeAllowedManagerPhone } from '../participant-safety.js';
 
 const logger = createWorkerLogger();
 
@@ -46,17 +47,6 @@ export async function processEvent(
         result: 'dead-letter:unknown-group',
       },
     });
-
-    await db.groupEvent.create({
-      data: {
-        groupId: await getOrCreateOrphanGroup(db, event.groupId, event.groupName),
-        eventType: event.event,
-        whatsappEventId: event.event_id,
-        rawPayload: event as unknown as Prisma.InputJsonValue,
-        occurredAt: new Date(event.ts),
-      },
-    });
-
     return { success: true };
   }
 
@@ -79,9 +69,10 @@ export async function processEvent(
   await db.$transaction(async (tx) => {
     for (let i = 0; i < event.participants.length; i++) {
       const participant = event.participants[i];
-      if (!participant.number) continue;
+      const phone = normalizeAllowedManagerPhone(participant.number);
+      if (!phone) continue;
 
-      const contact = await upsertContact(tx as unknown as PrismaClient, participant);
+      const contact = await upsertContact(tx as unknown as PrismaClient, participant, phone);
 
       if (isEnter) {
         await handleEnter(tx as unknown as PrismaClient, contact.id, group, occurredAt);
@@ -96,7 +87,10 @@ export async function processEvent(
           contactId: contact.id,
           eventType: event.event,
           whatsappEventId: `${event.event_id}${eventSuffix}`,
-          rawPayload: event as unknown as Prisma.InputJsonValue,
+          rawPayload: {
+            ...event,
+            participants: [participant],
+          } as unknown as Prisma.InputJsonValue,
           occurredAt,
           processedAt: new Date(),
         },
@@ -121,9 +115,11 @@ export async function processEvent(
 async function upsertContact(
   db: PrismaClient,
   participant: WmParticipant,
+  phone: string,
 ) {
-  const phone = participant.number!;
-  const existing = await db.contact.findUnique({ where: { phone } });
+  const existing = await db.contact.findFirst({
+    where: { OR: [{ phone }, { normalizedPhone: phone }] },
+  });
 
   if (existing) {
     const updateData: Record<string, unknown> = { lastSeenAt: new Date() };
@@ -150,7 +146,7 @@ async function upsertContact(
 async function handleEnter(
   db: PrismaClient,
   contactId: string,
-  group: { id: string; campaignId: string },
+  group: { id: string; campaignId: string; category: string },
   occurredAt: Date,
 ) {
   const existingMembership = await db.groupMembership.findFirst({
@@ -159,7 +155,7 @@ async function handleEnter(
 
   if (existingMembership) return;
 
-  await db.groupMembership.create({
+  const membership = await db.groupMembership.create({
     data: {
       groupId: group.id,
       contactId,
@@ -183,20 +179,45 @@ async function handleEnter(
   });
 
   if (existingParticipation) {
+    const existingMetadata = jsonObject(existingParticipation.metadata);
     if (existingParticipation.status === 'left') {
       await db.campaignParticipation.update({
         where: { id: existingParticipation.id },
-        data: { status: 'active', groupId: group.id },
+        data: {
+          status: 'active',
+          groupId: group.id,
+          metadata: {
+            ...existingMetadata,
+            reenteredAt: occurredAt.toISOString(),
+            confirmationSource: 'whatsapp-manager',
+          } as Prisma.InputJsonValue,
+        },
+      });
+    } else if (!existingParticipation.groupId) {
+      await db.campaignParticipation.update({
+        where: { id: existingParticipation.id },
+        data: {
+          groupId: group.id,
+          metadata: {
+            ...existingMetadata,
+            joinConfirmedAt: existingMetadata.joinConfirmedAt ?? occurredAt.toISOString(),
+            confirmationSource: 'whatsapp-manager',
+          } as Prisma.InputJsonValue,
+        },
       });
     }
   } else {
-    await db.campaignParticipation.create({
+    const participation = await db.campaignParticipation.create({
       data: {
         contactId,
         campaignId: group.campaignId,
         groupId: group.id,
         status: 'active',
-        classification: 'new',
+        classification: classificationFromCategory(group.category),
+        metadata: {
+          joinConfirmedAt: occurredAt.toISOString(),
+          confirmationSource: 'whatsapp-manager',
+        } as Prisma.InputJsonValue,
       },
     });
 
@@ -204,7 +225,33 @@ async function handleEnter(
       where: { id: contactId },
       data: { totalParticipations: { increment: 1 } },
     });
+
+    await db.auditLog.create({
+      data: {
+        action: 'participation.confirmed',
+        resource: 'campaign_participations',
+        resourceId: participation.id,
+        newValue: {
+          contactId,
+          campaignId: group.campaignId,
+          groupId: group.id,
+        } as Prisma.InputJsonValue,
+      },
+    });
   }
+
+  await db.auditLog.create({
+    data: {
+      action: existingParticipation?.status === 'left' ? 'group.rejoin' : 'group.join',
+      resource: 'group_memberships',
+      resourceId: membership.id,
+      newValue: {
+        contactId,
+        campaignId: group.campaignId,
+        groupId: group.id,
+      } as Prisma.InputJsonValue,
+    },
+  });
 }
 
 async function handleLeave(
@@ -227,6 +274,19 @@ async function handleLeave(
       where: { id: group.id },
       data: { currentCount: { decrement: 1 } },
     });
+
+    await db.auditLog.create({
+      data: {
+        action: 'group.leave',
+        resource: 'group_memberships',
+        resourceId: membership.id,
+        newValue: {
+          contactId,
+          campaignId: group.campaignId,
+          groupId: group.id,
+        } as Prisma.InputJsonValue,
+      },
+    });
   }
 
   const participation = await db.campaignParticipation.findUnique({
@@ -246,43 +306,14 @@ async function handleLeave(
   }
 }
 
-async function getOrCreateOrphanGroup(
-  db: PrismaClient,
-  whatsappId: string,
-  groupName: string,
-): Promise<string> {
-  const existing = await db.group.findFirst({ where: { whatsappId } });
-  if (existing) return existing.id;
+function classificationFromCategory(category: string): string {
+  return ['novo', 'reparticipante', 'veterano'].includes(category) ? category : 'new';
+}
 
-  let orphanCampaign = await db.campaign.findFirst({
-    where: { slug: '_orphan-events' },
-  });
-
-  if (!orphanCampaign) {
-    const systemUser = await db.adminUser.findFirst();
-    if (!systemUser) throw new Error('No admin user for orphan campaign');
-
-    orphanCampaign = await db.campaign.create({
-      data: {
-        name: 'Eventos Orfaos',
-        slug: '_orphan-events',
-        status: 'historical',
-        createdBy: systemUser.id,
-      },
-    });
-  }
-
-  const group = await db.group.create({
-    data: {
-      campaignId: orphanCampaign.id,
-      whatsappId,
-      name: groupName,
-      category: 'geral',
-      isActive: false,
-    },
-  });
-
-  return group.id;
+function jsonObject(value: Prisma.JsonValue | null): Record<string, Prisma.JsonValue> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, Prisma.JsonValue>)
+    : {};
 }
 
 export async function processEventBatch(

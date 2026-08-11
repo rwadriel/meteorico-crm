@@ -14,6 +14,7 @@ const WABA_ID = '987654321098765';
 const TEST_PHONE = '5591999990001';
 
 async function cleanDb(db: PrismaClient) {
+  await db.auditLog.deleteMany();
   await db.leadAttribution.deleteMany();
   await db.diagnosis.deleteMany();
   await db.humanHandoff.deleteMany();
@@ -147,7 +148,7 @@ describe('Meta WhatsApp webhook integration', () => {
     expect(response.statusCode).toBe(403);
   });
 
-  it('creates a normalized contact, conversation, message and deterministic classification', async () => {
+  it('creates a normalized contact and message without confirming participation before join', async () => {
     const response = await postMeta(
       metaPayload({
         messages: [
@@ -189,7 +190,7 @@ describe('Meta WhatsApp webhook integration', () => {
         },
       },
     });
-    expect(participation).toMatchObject({ classification: 'novo', groupId: null });
+    expect(participation).toBeNull();
   });
 
   it('reuses an existing contact regardless of phone formatting source', async () => {
@@ -249,7 +250,7 @@ describe('Meta WhatsApp webhook integration', () => {
       }),
     ).toBe(1);
     expect(await db.campaignParticipation.count({ where: { campaignId: currentCampaignId } })).toBe(
-      1,
+      0,
     );
     expect(await db.outboundRecord.count()).toBe(0);
   });
@@ -289,7 +290,7 @@ describe('Meta WhatsApp webhook integration', () => {
     const participation = await db.campaignParticipation.findUnique({
       where: { contactId_campaignId: { contactId: contact.id, campaignId: currentCampaignId } },
     });
-    expect(participation).toMatchObject({ classification: 'aluno', groupId: null });
+    expect(participation).toBeNull();
   });
 
   it('classifies one confirmed prior campaign as reparticipante', async () => {

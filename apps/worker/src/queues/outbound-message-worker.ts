@@ -138,6 +138,19 @@ async function processOutboundMessage(job: Job<OutboundMessageJob>): Promise<voi
     },
   });
 
+  await db.auditLog.create({
+    data: {
+      action: 'outbound.sent',
+      resource: 'outbound_records',
+      resourceId: existingRecord?.id ?? idempotencyKey,
+      newValue: {
+        campaignId: campaignId ?? null,
+        contactId: conversation.contactId,
+        provider: provider.name,
+      },
+    },
+  });
+
   logger.info({ conversationId, idempotencyKey }, 'Message sent');
 }
 

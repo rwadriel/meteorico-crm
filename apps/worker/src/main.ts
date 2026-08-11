@@ -31,7 +31,23 @@ async function pollEvents(): Promise<void> {
     where: { integration: 'whatsapp-manager' },
   });
 
-  let since = cursorRecord ? parseInt(cursorRecord.cursor, 10) : 0;
+  if (!cursorRecord) {
+    const health = await provider.health();
+    await db.integrationCursor.create({
+      data: {
+        integration: 'whatsapp-manager',
+        cursor: String(health.lastSeq),
+        lastPolledAt: new Date(),
+      },
+    });
+    logger.info(
+      { lastSeq: health.lastSeq },
+      'WhatsApp Manager cursor initialized at latest event',
+    );
+    return;
+  }
+
+  let since = parseInt(cursorRecord.cursor, 10);
   let totalProcessed = 0;
 
   let hasMore = true;
@@ -100,7 +116,12 @@ async function start(): Promise<void> {
 
   startHealthServer();
 
-  const outboundWorker = startOutboundMessageWorker();
+  const outboundWorker = process.env.WHATSAPP_OUTBOUND_ENABLED === 'true'
+    ? startOutboundMessageWorker()
+    : null;
+  if (!outboundWorker) {
+    logger.warn('Outbound message worker disabled by WHATSAPP_OUTBOUND_ENABLED');
+  }
   const integrationWorker = startIntegrationTaskWorker();
 
   const pollingTimer = setInterval(async () => {
@@ -134,7 +155,7 @@ async function start(): Promise<void> {
     logger.info({ signal }, 'Worker shutting down');
     clearInterval(pollingTimer);
     clearInterval(reconciliationTimer);
-    await outboundWorker.close();
+    await outboundWorker?.close();
     await integrationWorker.close();
     await closeRedisConnection();
     await disconnect();

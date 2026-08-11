@@ -142,6 +142,15 @@ export async function handleDeliveryStatus(db: PrismaClient, status: DeliverySta
       ...(status.status === 'failed' ? { lastError: status.error ?? 'meta_delivery_failed' } : {}),
     },
   });
+
+  await db.auditLog.create({
+    data: {
+      action: `outbound.${status.status}`,
+      resource: 'conversation_messages',
+      resourceId: message.id,
+      newValue: { status: status.status },
+    },
+  });
 }
 
 export async function sendMessage(

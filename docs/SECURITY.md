@@ -257,6 +257,8 @@ Segredos sao configurados via variaveis de ambiente, nunca no codigo:
 - `WHATSAPP_STAGING_ALLOWLIST` e obrigatoria para envio quando
   `DEPLOYMENT_ENV=staging`. A checagem ocorre antes da fila na API e novamente
   antes da chamada externa no worker/provider.
+- `WHATSAPP_OUTBOUND_ENABLED` e uma trava fail-closed. Somente o valor exato
+  `true` permite que a API enfileire automacoes e que o worker consuma outbound.
 - `OutboundRecord` e criado antes do enqueue. Bloqueios, retries e status
   permanecem auditaveis sem armazenar credenciais.
 - Opt-out e handoff humano impedem outbound automatico.
