@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Queue } from 'bullmq';
 import { getRedisConnection } from './connection.js';
 
@@ -14,6 +15,10 @@ export interface OutboundMessageJob {
 }
 
 let queue: Queue<OutboundMessageJob> | null = null;
+
+export function toBullMqJobId(idempotencyKey: string): string {
+  return createHash('sha256').update(idempotencyKey).digest('hex');
+}
 
 export function getOutboundMessageQueue(): Queue<OutboundMessageJob> {
   if (!queue) {
@@ -33,7 +38,7 @@ export function getOutboundMessageQueue(): Queue<OutboundMessageJob> {
 export async function enqueueOutboundMessage(job: OutboundMessageJob): Promise<string> {
   const q = getOutboundMessageQueue();
   const added = await q.add(job.idempotencyKey, job, {
-    jobId: job.idempotencyKey,
+    jobId: toBullMqJobId(job.idempotencyKey),
   });
-  return added.id ?? job.idempotencyKey;
+  return added.id ?? toBullMqJobId(job.idempotencyKey);
 }
