@@ -28,11 +28,33 @@
 | SEED_ADMIN_PASSWORD | database | Senha do admin inicial no seed | meteorico-dev-2026 | Login com credenciais |
 | SEED_ADMIN_NAME | database | Nome do admin inicial | Admin Dev | - |
 
+## Meta WhatsApp Cloud API
+
+Configure os valores somente no gerenciador de secrets do ambiente. O
+repositorio e o `.env.example` documentam apenas os nomes.
+
+| Variavel | Servico | Descricao | Obrigatoria em staging |
+|----------|---------|-----------|------------------------|
+| DEPLOYMENT_ENV | api, worker | Ambiente de execucao; use `staging` para ativar a barreira de destinatarios | Sim |
+| WHATSAPP_PRIVATE_PROVIDER | api, worker | Adapter de mensageria; `meta_cloud` ativa a API oficial | Sim |
+| META_WHATSAPP_ACCESS_TOKEN | api, worker | Token do System User com permissoes minimas de WhatsApp | Sim |
+| META_WHATSAPP_PHONE_NUMBER_ID | api, worker | Identificador do numero da Cloud API | Sim |
+| META_WHATSAPP_WABA_ID | api, worker | Identificador da conta WhatsApp Business autorizada | Sim |
+| META_WHATSAPP_VERIFY_TOKEN | api | Segredo aleatorio usado no desafio GET do webhook | Sim |
+| META_APP_SECRET | api | App Secret usado no HMAC SHA-256 do corpo bruto | Sim |
+| META_GRAPH_API_VERSION | api, worker | Versao fixada da Graph API | Nao (`v25.0`) |
+| WHATSAPP_STAGING_ALLOWLIST | api, worker | Telefones E.164 separados por virgula autorizados a receber em staging | Sim |
+
+O worker nao precisa do verify token. O App Secret e obrigatorio somente na
+API, que recebe o webhook. API e worker aplicam a allowlist separadamente.
+
 ## Seguranca
 
 - NUNCA colocar valores reais no repositorio
 - Usar secrets do EasyPanel ou .env local (gitignored)
 - SESSION_SECRET deve ter pelo menos 32 caracteres de alta entropia
 - EDUZZ_WEBHOOK_SECRET e obrigatorio em staging/producao; sem ele, webhook retorna 503
+- META_WHATSAPP_ACCESS_TOKEN, META_APP_SECRET e META_WHATSAPP_VERIFY_TOKEN nunca devem ser logados
+- WHATSAPP_STAGING_ALLOWLIST deve permanecer restrita aos numeros de teste em staging
 - Tokens de integracao sao enviados apenas em headers Authorization
 - XAI_API_KEY nunca e logada (redact do Pino)

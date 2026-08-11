@@ -1,5 +1,11 @@
 import type { PrismaClient } from '@meteorico/database';
-import type { IncomingMessage, DeliveryStatus, MessagingProvider, MessagePayload } from '../providers/messaging.js';
+import { normalizePhone } from '@meteorico/shared';
+import type {
+  IncomingMessage,
+  DeliveryStatus,
+  MessagingProvider,
+  MessagePayload,
+} from '../providers/messaging.js';
 
 export interface AttributionData {
   source: string;
@@ -20,16 +26,33 @@ export async function handleIncomingMessage(
   db: PrismaClient,
   incoming: IncomingMessage,
   provider: MessagingProvider,
-): Promise<{ conversationId: string; isNew: boolean }> {
+): Promise<{
+  conversationId: string;
+  contactId: string;
+  isNew: boolean;
+  isDuplicate: boolean;
+}> {
   const existingMessage = await db.conversationMessage.findUnique({
     where: { externalMessageId: incoming.externalMessageId },
+    include: { conversation: { select: { contactId: true } } },
   });
   if (existingMessage) {
-    return { conversationId: existingMessage.conversationId, isNew: false };
+    return {
+      conversationId: existingMessage.conversationId,
+      contactId: existingMessage.conversation.contactId,
+      isNew: false,
+      isDuplicate: true,
+    };
   }
 
-  const phone = normalizeIncomingPhone(incoming.from);
-  let contact = await db.contact.findUnique({ where: { phone } });
+  const phone = normalizePhone(incoming.from);
+  if (!phone) throw new Error('Invalid sender phone');
+
+  let contact = await db.contact.findFirst({
+    where: {
+      OR: [{ phone }, { normalizedPhone: phone }],
+    },
+  });
 
   if (!contact) {
     contact = await db.contact.create({
@@ -44,7 +67,11 @@ export async function handleIncomingMessage(
   } else {
     await db.contact.update({
       where: { id: contact.id },
-      data: { lastSeenAt: new Date() },
+      data: {
+        lastSeenAt: new Date(),
+        phone: contact.phone ?? phone,
+        normalizedPhone: phone,
+      },
     });
   }
 
@@ -81,13 +108,15 @@ export async function handleIncomingMessage(
     await tryAttributeFromReferral(db, contact.id, conversation.id, incoming.referral);
   }
 
-  return { conversationId: conversation.id, isNew };
+  return {
+    conversationId: conversation.id,
+    contactId: contact.id,
+    isNew,
+    isDuplicate: false,
+  };
 }
 
-export async function handleDeliveryStatus(
-  db: PrismaClient,
-  status: DeliveryStatus,
-) {
+export async function handleDeliveryStatus(db: PrismaClient, status: DeliveryStatus) {
   const message = await db.conversationMessage.findUnique({
     where: { externalMessageId: status.externalMessageId },
   });
@@ -103,6 +132,15 @@ export async function handleDeliveryStatus(
   await db.conversationMessage.update({
     where: { id: message.id },
     data,
+  });
+
+  await db.outboundRecord.updateMany({
+    where: { providerMessageId: status.externalMessageId },
+    data: {
+      status: status.status,
+      ...(status.status === 'sent' ? { sentAt: new Date(status.timestamp) } : {}),
+      ...(status.status === 'failed' ? { lastError: status.error ?? 'meta_delivery_failed' } : {}),
+    },
   });
 }
 
@@ -146,11 +184,7 @@ export async function sendMessage(
   });
 }
 
-export async function optOutContact(
-  db: PrismaClient,
-  contactId: string,
-  channel = 'whatsapp',
-) {
+export async function optOutContact(db: PrismaClient, contactId: string, channel = 'whatsapp') {
   return db.contactPreference.upsert({
     where: {
       contactId_channel: { contactId, channel },
@@ -166,11 +200,7 @@ export async function optOutContact(
   });
 }
 
-export async function optInContact(
-  db: PrismaClient,
-  contactId: string,
-  channel = 'whatsapp',
-) {
+export async function optInContact(db: PrismaClient, contactId: string, channel = 'whatsapp') {
   return db.contactPreference.upsert({
     where: {
       contactId_channel: { contactId, channel },
@@ -284,8 +314,4 @@ async function tryAttributeFromReferral(
       },
     });
   }
-}
-
-function normalizeIncomingPhone(phone: string): string {
-  return phone.replace(/[^0-9]/g, '');
 }

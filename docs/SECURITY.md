@@ -30,6 +30,8 @@ inicial e as medidas de seguranca planejadas.
 | Data exposure em logs    | Medio | Redacao automatica de PII        |
 | Token theft              | Alto  | httpOnly, Secure, SameSite       |
 | Dependency vulnerabilities| Medio | npm audit, Snyk/Dependabot      |
+| Webhook Meta falsificado  | Alto  | HMAC do corpo bruto + timing-safe |
+| Envio acidental em staging| Alto  | Allowlist dupla na API e worker |
 
 ## Autenticacao
 
@@ -232,6 +234,9 @@ Segredos sao configurados via variaveis de ambiente, nunca no codigo:
 - `WHATSAPP_MANAGER_API_KEY` - API key do WhatsApp Manager
 - `EDUZZ_API_KEY` - API key do Eduzz (futuro)
 - `XAI_API_KEY` - API key do xAI/Grok (futuro)
+- `META_WHATSAPP_ACCESS_TOKEN` - Token do System User da Meta
+- `META_APP_SECRET` - Segredo HMAC do aplicativo Meta
+- `META_WHATSAPP_VERIFY_TOKEN` - Segredo do desafio do webhook Meta
 
 ### Praticas
 
@@ -239,6 +244,22 @@ Segredos sao configurados via variaveis de ambiente, nunca no codigo:
 - `.env.example` com nomes (sem valores)
 - EasyPanel gerencia variaveis em producao
 - Rotacao de segredos documentada em runbook
+
+### Meta WhatsApp em staging
+
+- O callback recebe os bytes brutos de `application/json` e valida
+  `X-Hub-Signature-256` antes do parse e de qualquer efeito colateral.
+- A comparacao do HMAC e do verify token usa `timingSafeEqual` e tambem valida
+  o tamanho dos buffers.
+- Payloads de outra WABA ou de outro Phone Number ID sao ignorados.
+- Erros do provider registram apenas HTTP/code; corpo remoto e token nao sao
+  propagados para logs.
+- `WHATSAPP_STAGING_ALLOWLIST` e obrigatoria para envio quando
+  `DEPLOYMENT_ENV=staging`. A checagem ocorre antes da fila na API e novamente
+  antes da chamada externa no worker/provider.
+- `OutboundRecord` e criado antes do enqueue. Bloqueios, retries e status
+  permanecem auditaveis sem armazenar credenciais.
+- Opt-out e handoff humano impedem outbound automatico.
 
 ## Seguranca de dependencias
 
@@ -285,3 +306,13 @@ Segredos sao configurados via variaveis de ambiente, nunca no codigo:
 - [ ] CSRF tokens (SameSite=Lax e suficiente para o cenario atual)
 - [ ] Testes de seguranca automatizados (futuro)
 - [ ] Penetration testing manual (futuro)
+
+### Etapa 11.2 (Meta WhatsApp Cloud API)
+
+- [x] System User/token previsto com permissoes minimas
+- [x] HMAC SHA-256 do corpo bruto com comparacao timing-safe
+- [x] Validacao de WABA e Phone Number ID
+- [x] Idempotencia de inbound e status
+- [x] Allowlist de staging aplicada em duas camadas
+- [x] Opt-out e handoff bloqueiam outbound
+- [x] Outbound somente via `OutboundRecord` e BullMQ

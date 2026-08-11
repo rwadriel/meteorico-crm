@@ -5,6 +5,8 @@ export const OUTBOUND_MESSAGE_QUEUE = 'outbound-messages';
 
 export interface OutboundMessageJob {
   conversationId: string;
+  contactId?: string;
+  campaignId?: string;
   content: string;
   messageType: string;
   templateId?: string;
@@ -28,9 +30,7 @@ export function getOutboundMessageQueue(): Queue<OutboundMessageJob> {
   return queue;
 }
 
-export async function enqueueOutboundMessage(
-  job: OutboundMessageJob,
-): Promise<string> {
+export async function enqueueOutboundMessage(job: OutboundMessageJob): Promise<string> {
   const q = getOutboundMessageQueue();
   const added = await q.add(job.idempotencyKey, job, {
     jobId: job.idempotencyKey,

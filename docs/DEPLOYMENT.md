@@ -181,8 +181,19 @@ volumes:
 | EDUZZ_API_SECRET             | Secret do Eduzz                        | Nao (futuro)|
 | XAI_API_KEY                  | API key do xAI/Grok                    | Nao (futuro)|
 | XAI_MODEL                    | Modelo xAI (default: grok-2)           | Nao (futuro)|
-| META_APP_ID                  | App ID do Meta                         | Nao (futuro)|
-| META_APP_SECRET              | Secret do Meta                         | Nao (futuro)|
+| DEPLOYMENT_ENV               | Ativa protecoes especificas do ambiente | Sim       |
+| WHATSAPP_PRIVATE_PROVIDER    | `mock` ou `meta_cloud`                 | Sim         |
+| META_WHATSAPP_ACCESS_TOKEN   | Token do System User Meta              | Sim (Meta)  |
+| META_WHATSAPP_PHONE_NUMBER_ID| Phone Number ID da Cloud API           | Sim (Meta)  |
+| META_WHATSAPP_WABA_ID        | WABA autorizada                        | Sim (Meta)  |
+| META_WHATSAPP_VERIFY_TOKEN   | Token aleatorio do desafio do webhook  | Sim (API)   |
+| META_APP_SECRET              | App Secret para assinatura do webhook  | Sim (API)   |
+| META_GRAPH_API_VERSION       | Versao fixada da Graph API             | Nao         |
+| WHATSAPP_STAGING_ALLOWLIST   | E.164 autorizados, separados por virgula | Sim (staging) |
+
+No EasyPanel de staging, configure a API com todos os itens Meta acima. No
+worker, configure provider, access token, Phone Number ID, WABA ID, versao,
+ambiente e allowlist. Nao configure valores Meta no frontend.
 
 ### Frontend (build-time)
 

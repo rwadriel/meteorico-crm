@@ -11,7 +11,7 @@ implementacao real e um mock para testes e desenvolvimento local.
 | Integracao               | Status       | Documentacao | Implementacao |
 |--------------------------|-------------|--------------|---------------|
 | WhatsApp Manager API     | Disponivel  | Kit incluso  | Etapa 04      |
-| WhatsApp Messaging       | Futuro      | Pendente     | Etapa 06      |
+| Meta WhatsApp Cloud API  | Disponivel  | Este documento | Etapa 11.2  |
 | Eduzz                    | Futuro      | Pendente     | Etapa 07      |
 | xAI/Grok                 | Futuro      | Pendente     | Etapa 07      |
 | Meta Marketing API       | Futuro      | Pendente     | Etapa 07      |
@@ -126,34 +126,55 @@ Worker (polling loop):
 - **5xx**: Retry com backoff. Alerta apos 5 falhas consecutivas.
 - **Dados invalidos**: Registrar evento com erro, nao bloquear fila.
 
-## 2. WhatsApp Messaging Provider (futuro)
+## 2. Meta WhatsApp Cloud API
 
 ### Descricao
 
-Provedor de envio de mensagens WhatsApp. Sera usado para enviar
-mensagens aos contatos durante fluxos de conversa.
+Provider oficial para receber mensagens e status e enviar mensagens privadas
+por meio da Graph API. A integracao fica atras da interface
+`MessagingProvider`; dominio e rotas nao chamam a Graph API diretamente.
 
 ### Status
 
-**Pendente** - O provedor ainda nao foi definido. A integracao sera
-implementada via interface + mock ate que o provedor seja escolhido.
+**Disponivel** - O adapter `MetaCloudWhatsAppProvider` convive com o mock de
+desenvolvimento. Ative-o somente com `WHATSAPP_PRIVATE_PROVIDER=meta_cloud`.
 
-### Interface planejada
+### Webhook
 
-```typescript
-interface WhatsAppMessagingProvider {
-  sendTextMessage(phone: string, text: string): Promise<MessageResult>
-  sendTemplateMessage(phone: string, template: string, params: Record<string, string>): Promise<MessageResult>
-  sendButtonMessage(phone: string, text: string, buttons: Button[]): Promise<MessageResult>
-  getMessageStatus(messageId: string): Promise<MessageStatus>
-}
-```
+- Callback HTTPS: `GET/POST /webhooks/whatsapp/meta`
+- O GET compara o verify token em tempo constante e devolve o challenge.
+- O POST valida `X-Hub-Signature-256` sobre os bytes exatos do corpo antes do
+  parse ou de qualquer escrita no banco.
+- Apenas eventos `messages` da WABA e do Phone Number ID configurados sao
+  aceitos.
+- Mensagens inbound usam `externalMessageId` e `ProcessedEvent` para
+  idempotencia. Os status suportados sao `sent`, `delivered`, `read` e
+  `failed`.
 
-### Entradas pendentes
+### Inbound e classificacao
 
-- Escolha do provedor (API oficial WhatsApp Business, 360dialog, etc)
-- Credenciais e limites
-- Aprovacao de templates
+- O telefone e normalizado e o contato existente e reutilizado.
+- A classificacao continua deterministica: `aluno`, `novo`, `reparticipante`,
+  `veterano` ou `needs_review`.
+- Inbound nao aloca grupos. `aluno` e `needs_review` permanecem fora de grupos
+  comerciais.
+
+### Outbound
+
+O endpoint autenticado cria primeiro um `OutboundRecord`, enfileira em
+`outbound-messages` (BullMQ), e o worker chama o provider. Opt-out e handoff
+bloqueiam o envio. Em staging, API e worker aplicam a allowlist E.164; uma
+tentativa fora dela vira registro `blocked` e nao chega a Graph API.
+
+O webhook nunca dispara resposta direta. A resposta controlada deve passar
+pelo mesmo caminho `OutboundRecord -> BullMQ -> worker -> provider`.
+
+### Credencial operacional
+
+Use um System User dedicado, associado somente a WABA correta, com
+`whatsapp_business_messaging` e `whatsapp_business_management`.
+`business_management` so deve ser adicionado se uma operacao realmente o
+exigir. O token fica exclusivamente no secret manager do ambiente.
 
 ## 3. Eduzz (futuro)
 

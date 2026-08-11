@@ -3,12 +3,7 @@ import { Prisma } from '@meteorico/database';
 import { getHistoryEvidence } from './participation-history.js';
 
 export type ContactClassification =
-  | 'aluno'
-  | 'novo'
-  | 'reparticipante'
-  | 'veterano'
-  | 'needs_review'
-  | 'blocked';
+  'aluno' | 'novo' | 'reparticipante' | 'veterano' | 'needs_review' | 'blocked';
 
 export interface ClassificationFact {
   key: string;
@@ -38,7 +33,11 @@ export async function classifyContact(
   db: PrismaClient,
   contactId: string,
   campaignId: string,
-  options: { simulate?: boolean; rules?: Partial<ClassificationRules> } = {},
+  options: {
+    simulate?: boolean;
+    allocateGroup?: boolean;
+    rules?: Partial<ClassificationRules>;
+  } = {},
 ): Promise<ClassificationResult> {
   const rules = { ...DEFAULT_RULES, ...options.rules };
   const facts: ClassificationFact[] = [];
@@ -98,7 +97,8 @@ export async function classifyContact(
     };
 
     if (!simulate) {
-      const groupId = await allocateGroup(db, campaignId, 'aluno');
+      const groupId =
+        options.allocateGroup === false ? null : await allocateGroup(db, campaignId, 'aluno');
       result.groupId = groupId;
       await persistClassification(db, contactId, campaignId, result);
     }
@@ -156,7 +156,8 @@ export async function classifyContact(
   };
 
   if (!simulate && classification !== 'needs_review') {
-    const groupId = await allocateGroup(db, campaignId, classification);
+    const groupId =
+      options.allocateGroup === false ? null : await allocateGroup(db, campaignId, classification);
     result.groupId = groupId;
     await persistClassification(db, contactId, campaignId, result);
   }
@@ -170,7 +171,7 @@ async function allocateGroup(
   classification: ContactClassification,
 ): Promise<string | null> {
   const categoryMap: Record<ContactClassification, string[]> = {
-    aluno: ['aluno', 'geral'],
+    aluno: [],
     novo: ['novo', 'geral'],
     reparticipante: ['reparticipante', 'geral'],
     veterano: ['veterano', 'geral'],
@@ -252,12 +253,18 @@ export async function overrideClassification(
       classification: newClassification,
       status: 'active',
       groupId,
-      metadata: { overriddenBy: adminUserId, overriddenAt: new Date().toISOString() } as Prisma.InputJsonValue,
+      metadata: {
+        overriddenBy: adminUserId,
+        overriddenAt: new Date().toISOString(),
+      } as Prisma.InputJsonValue,
     },
     update: {
       classification: newClassification,
       groupId,
-      metadata: { overriddenBy: adminUserId, overriddenAt: new Date().toISOString() } as Prisma.InputJsonValue,
+      metadata: {
+        overriddenBy: adminUserId,
+        overriddenAt: new Date().toISOString(),
+      } as Prisma.InputJsonValue,
     },
   });
 

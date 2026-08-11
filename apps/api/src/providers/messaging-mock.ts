@@ -27,7 +27,7 @@ export class MockMessagingProvider implements MessagingProvider {
     return { externalMessageId };
   }
 
-  verifyWebhook(_headers: Record<string, string>, _body: unknown): boolean {
+  verifyWebhook(_headers: Record<string, string>, _rawBody: Uint8Array): boolean {
     return true;
   }
 

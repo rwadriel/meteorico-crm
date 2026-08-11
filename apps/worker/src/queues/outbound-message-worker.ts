@@ -1,7 +1,9 @@
 import { Worker, type Job } from 'bullmq';
 import { getClient } from '@meteorico/database';
+import { OutboundBlockedError, type MessagePayload } from '@meteorico/shared';
 import { getRedisConnection } from './connection.js';
 import { createWorkerLogger } from '../logger.js';
+import { createOutboundMessagingProvider } from '../adapters/meta-cloud-whatsapp.js';
 
 const QUEUE_NAME = 'outbound-messages';
 const logger = createWorkerLogger();
@@ -24,7 +26,7 @@ async function processOutboundMessage(job: Job<OutboundMessageJob>): Promise<voi
     where: { idempotencyKey },
   });
 
-  if (existingRecord && existingRecord.status === 'sent') {
+  if (existingRecord && ['sent', 'delivered', 'read'].includes(existingRecord.status)) {
     logger.info({ idempotencyKey }, 'Duplicate message skipped (already sent)');
     return;
   }
@@ -78,15 +80,49 @@ async function processOutboundMessage(job: Job<OutboundMessageJob>): Promise<voi
     return;
   }
 
-  const message = await db.conversationMessage.create({
+  if (conversation.status === 'handoff') {
+    logger.warn({ conversationId }, 'Human handoff active, outbound skipped');
+    await db.outboundRecord.update({
+      where: { idempotencyKey },
+      data: { status: 'skipped', lastError: 'human_handoff' },
+    });
+    return;
+  }
+
+  const provider = createOutboundMessagingProvider();
+  const normalizedMessageType: MessagePayload['messageType'] =
+    messageType === 'link' || messageType === 'interactive' ? messageType : 'text';
+
+  let externalMessageId: string;
+  try {
+    const result = await provider.sendMessage({
+      to: conversation.contact.normalizedPhone ?? conversation.contact.phone ?? '',
+      content,
+      messageType: normalizedMessageType,
+    });
+    externalMessageId = result.externalMessageId;
+  } catch (error) {
+    if (error instanceof OutboundBlockedError) {
+      await db.outboundRecord.update({
+        where: { idempotencyKey },
+        data: { status: 'blocked', lastError: error.code, provider: provider.name },
+      });
+      logger.warn({ conversationId, idempotencyKey }, 'Staging allowlist blocked outbound');
+      return;
+    }
+    throw error;
+  }
+
+  await db.conversationMessage.create({
     data: {
       conversationId,
       direction: 'outbound',
       content,
-      messageType,
+      messageType: normalizedMessageType,
       templateId: job.data.templateId ?? null,
-      provider: 'queue',
-      deliveryStatus: 'queued',
+      externalMessageId,
+      provider: provider.name,
+      deliveryStatus: 'sent',
       sentAt: new Date(),
     },
   });
@@ -96,7 +132,8 @@ async function processOutboundMessage(job: Job<OutboundMessageJob>): Promise<voi
     data: {
       status: 'sent',
       sentAt: new Date(),
-      providerMessageId: message.id,
+      provider: provider.name,
+      providerMessageId: externalMessageId,
       contactId: conversation.contactId,
     },
   });
@@ -105,15 +142,11 @@ async function processOutboundMessage(job: Job<OutboundMessageJob>): Promise<voi
 }
 
 export function startOutboundMessageWorker(): Worker<OutboundMessageJob> {
-  const worker = new Worker<OutboundMessageJob>(
-    QUEUE_NAME,
-    processOutboundMessage,
-    {
-      connection: getRedisConnection(),
-      concurrency: 5,
-      limiter: { max: 30, duration: 1000 },
-    },
-  );
+  const worker = new Worker<OutboundMessageJob>(QUEUE_NAME, processOutboundMessage, {
+    connection: getRedisConnection(),
+    concurrency: 5,
+    limiter: { max: 30, duration: 1000 },
+  });
 
   worker.on('completed', (job) => {
     logger.debug({ jobId: job.id }, 'Outbound message processed');
@@ -122,10 +155,12 @@ export function startOutboundMessageWorker(): Worker<OutboundMessageJob> {
   worker.on('failed', (job, err) => {
     if (job) {
       const db = getClient();
-      db.outboundRecord.update({
-        where: { idempotencyKey: job.data.idempotencyKey },
-        data: { status: 'failed', lastError: err.message },
-      }).catch((e) => logger.error({ err: e }, 'Failed to update outbound record on failure'));
+      db.outboundRecord
+        .update({
+          where: { idempotencyKey: job.data.idempotencyKey },
+          data: { status: 'failed', lastError: err.message },
+        })
+        .catch((e) => logger.error({ err: e }, 'Failed to update outbound record on failure'));
     }
     logger.error(
       { jobId: job?.id, error: err.message, attempts: job?.attemptsMade },

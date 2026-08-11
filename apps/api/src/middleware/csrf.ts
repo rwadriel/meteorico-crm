@@ -1,8 +1,19 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-const EXEMPT_PATHS = new Set(['/auth/login', '/webhook/eduzz', '/webhook/messaging', '/health', '/readiness']);
-const FORM_CONTENT_TYPES = ['application/x-www-form-urlencoded', 'multipart/form-data', 'text/plain'];
+const EXEMPT_PATHS = new Set([
+  '/auth/login',
+  '/webhook/eduzz',
+  '/webhook/messaging',
+  '/webhooks/whatsapp/meta',
+  '/health',
+  '/readiness',
+]);
+const FORM_CONTENT_TYPES = [
+  'application/x-www-form-urlencoded',
+  'multipart/form-data',
+  'text/plain',
+];
 
 function getAllowedOrigins(): string[] {
   return (process.env.API_CORS_ORIGINS ?? 'http://localhost:5173').split(',').map((o) => o.trim());
@@ -44,15 +55,23 @@ export async function csrfProtection(app: FastifyInstance): Promise<void> {
     if (origin) {
       const allowed = getAllowedOrigins();
       if (!allowed.includes(origin)) {
-        request.log.warn({ origin, method: request.method, url: request.url }, 'CSRF: origin rejected');
+        request.log.warn(
+          { origin, method: request.method, url: request.url },
+          'CSRF: origin rejected',
+        );
         return reply.status(403).send({ error: 'Forbidden', message: 'Origin not allowed' });
       }
       return;
     }
 
     if (isFormContentType(request)) {
-      request.log.warn({ method: request.method, url: request.url }, 'CSRF: form content-type without Origin');
-      return reply.status(403).send({ error: 'Forbidden', message: 'Origin header required for form submissions' });
+      request.log.warn(
+        { method: request.method, url: request.url },
+        'CSRF: form content-type without Origin',
+      );
+      return reply
+        .status(403)
+        .send({ error: 'Forbidden', message: 'Origin header required for form submissions' });
     }
   });
 }
