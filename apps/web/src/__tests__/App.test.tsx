@@ -14,6 +14,7 @@ function mockFetch(overrides: Partial<Response> = {}) {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  window.history.pushState({}, '', '/');
 });
 
 describe('App', () => {
@@ -29,6 +30,16 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getByText('Entrar no CRM')).toBeDefined();
     });
+  });
+
+  it('serves the privacy policy without authentication', async () => {
+    window.history.pushState({}, '', '/privacy');
+    globalThis.fetch = mockFetch();
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Política de Privacidade' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: '6. Direitos e exclusão de dados' })).toBeDefined();
   });
 
   it('shows login form fields', async () => {

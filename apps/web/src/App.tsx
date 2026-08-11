@@ -6,6 +6,7 @@ import {
   LoginPage, DashboardPage, CampaignsPage, GroupsPage,
   ContactsPage, MessagesPage, FlowsPage, AiPage,
   IntegrationsPage, ImportsPage, AuditPage, SettingsPage,
+  PrivacyPolicyPage,
 } from './pages/index.js';
 
 function LoginGuard() {
@@ -31,6 +32,9 @@ export function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
+          <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+          <Route path="/data-deletion" element={<PrivacyPolicyPage />} />
           <Route path="/login" element={<LoginGuard />} />
           <Route
             element={

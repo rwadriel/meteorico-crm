@@ -10,3 +10,4 @@ export { IntegrationsPage } from './IntegrationsPage.js';
 export { ImportsPage } from './ImportsPage.js';
 export { AuditPage } from './AuditPage.js';
 export { SettingsPage } from './SettingsPage.js';
+export { PrivacyPolicyPage } from './PrivacyPolicyPage.js';
