@@ -12,9 +12,9 @@ afterEach(() => {
 describe('normalizeAllowedManagerPhone', () => {
   it('matches the Meta wa_id alias to the single controlled staging recipient', () => {
     process.env.DEPLOYMENT_ENV = 'staging';
-    process.env.WHATSAPP_STAGING_ALLOWLIST = '5591993111778';
+    process.env.WHATSAPP_STAGING_ALLOWLIST = '5591999990001';
 
-    expect(normalizeAllowedManagerPhone('559193111778')).toBe('5591993111778');
+    expect(normalizeAllowedManagerPhone('559199990001')).toBe('5591999990001');
     expect(normalizeAllowedManagerPhone('559188887777')).toBeNull();
   });
 });

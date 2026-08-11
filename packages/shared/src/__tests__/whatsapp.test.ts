@@ -229,8 +229,29 @@ describe('staging allowlist helpers', () => {
   });
 
   it('matches the exact Meta wa_id alias of the same Brazilian mobile number', () => {
-    expect(assertStagingRecipientAllowed('559193111778', 'staging', '5591993111778')).toBe(
-      '5591993111778',
+    expect(assertStagingRecipientAllowed('559199990001', 'staging', '5591999990001')).toBe(
+      '5591999990001',
+    );
+  });
+
+  it.each(['5591888890001', '5591999990002', '5592999990001'])(
+    'blocks a non-equivalent recipient %s',
+    (recipient) => {
+      expect(() => assertStagingRecipientAllowed(recipient, 'staging', '5591999990001')).toThrow(
+        OutboundBlockedError,
+      );
+    },
+  );
+
+  it('rejects a recipient from another country as non-equivalent', () => {
+    expect(() => assertStagingRecipientAllowed('351919999001', 'staging', '5591999990001')).toThrow(
+      'Invalid recipient phone',
+    );
+  });
+
+  it('rejects an invalid recipient instead of falling back permissively', () => {
+    expect(() => assertStagingRecipientAllowed('invalid', 'staging', '5591999990001')).toThrow(
+      'Invalid recipient phone',
     );
   });
 });
