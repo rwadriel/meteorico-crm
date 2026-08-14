@@ -59,9 +59,9 @@ export async function reconcileSnapshots(
   );
   let oldestObservedAt: Date | null = null;
 
-  for (const snapshot of snapshots) {
+  for (const snapshotSummary of snapshots) {
     const group = await db.group.findFirst({
-      where: { whatsappId: snapshot.groupId },
+      where: { whatsappId: snapshotSummary.groupId },
     });
 
     if (!group) {
@@ -69,29 +69,49 @@ export async function reconcileSnapshots(
       continue;
     }
 
-    const snapshotAt = parseSnapshotDate(snapshot.updatedAt);
-    const timestampFromFuture = snapshotAt !== null
-      && snapshotAt.getTime() > now.getTime() + 5 * 60 * 1000;
-    if (snapshotAt !== null && !timestampFromFuture) {
-      if (oldestObservedAt === null || snapshotAt < oldestObservedAt) {
-        oldestObservedAt = snapshotAt;
-      }
-    }
-
-    if (
-      snapshotAt === null
-      || timestampFromFuture
-      || now.getTime() - snapshotAt.getTime() > staleAfterSeconds * 1000
-    ) {
+    const summaryFreshness = observeSnapshotFreshness(
+      snapshotSummary.updatedAt,
+      now,
+      staleAfterSeconds,
+      oldestObservedAt,
+    );
+    oldestObservedAt = summaryFreshness.oldestObservedAt;
+    if (!summaryFreshness.fresh) {
       result.skippedStale++;
       logger.warn({
         event: 'snapshot_stale',
-        groupId: snapshot.groupId,
-        snapshotAt: snapshotAt?.toISOString() ?? null,
-        timestampFromFuture,
+        groupId: snapshotSummary.groupId,
+        snapshotAt: summaryFreshness.snapshotAt?.toISOString() ?? null,
+        timestampFromFuture: summaryFreshness.timestampFromFuture,
         staleAfterSeconds,
       }, 'Stale snapshot ignored');
       continue;
+    }
+
+    let snapshot = snapshotSummary;
+    if (!snapshot.members) {
+      const detail = await provider.snapshots(snapshot.groupId);
+      snapshot = detail.groups.find((candidate) => candidate.groupId === snapshot.groupId)
+        ?? snapshot;
+
+      const detailFreshness = observeSnapshotFreshness(
+        snapshot.updatedAt,
+        now,
+        staleAfterSeconds,
+        oldestObservedAt,
+      );
+      oldestObservedAt = detailFreshness.oldestObservedAt;
+      if (!detailFreshness.fresh) {
+        result.skippedStale++;
+        logger.warn({
+          event: 'snapshot_stale',
+          groupId: snapshot.groupId,
+          snapshotAt: detailFreshness.snapshotAt?.toISOString() ?? null,
+          timestampFromFuture: detailFreshness.timestampFromFuture,
+          staleAfterSeconds,
+        }, 'Stale detailed snapshot ignored');
+        continue;
+      }
     }
 
     if (!snapshot.members) {
@@ -257,6 +277,36 @@ async function reconcileGroup(
 function parseSnapshotDate(value: string): Date | null {
   const parsed = new Date(value);
   return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
+function observeSnapshotFreshness(
+  value: string,
+  now: Date,
+  staleAfterSeconds: number,
+  oldestObservedAt: Date | null,
+): {
+  fresh: boolean;
+  snapshotAt: Date | null;
+  timestampFromFuture: boolean;
+  oldestObservedAt: Date | null;
+} {
+  const snapshotAt = parseSnapshotDate(value);
+  const timestampFromFuture = snapshotAt !== null
+    && snapshotAt.getTime() > now.getTime() + 5 * 60 * 1000;
+  const nextOldest = snapshotAt !== null
+    && !timestampFromFuture
+    && (oldestObservedAt === null || snapshotAt < oldestObservedAt)
+    ? snapshotAt
+    : oldestObservedAt;
+
+  return {
+    fresh: snapshotAt !== null
+      && !timestampFromFuture
+      && now.getTime() - snapshotAt.getTime() <= staleAfterSeconds * 1000,
+    snapshotAt,
+    timestampFromFuture,
+    oldestObservedAt: nextOldest,
+  };
 }
 
 function classificationFromCategory(category: string): string {

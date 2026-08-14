@@ -82,7 +82,9 @@ como ignorados e nao alteram participacao.
 
 #### GET /api/integration/snapshots
 
-Retorna o estado atual de todos os grupos monitorados.
+Sem `groupId`, retorna o indice leve dos grupos monitorados. O campo
+`updatedAt` e o instante em que a foto daquele grupo foi tirada; a resposta do
+indice nao inclui `members`.
 
 ```
 Response 200:
@@ -92,12 +94,18 @@ Response 200:
       "groupId": "grp_123",
       "groupName": "Grupo Lancamento 01",
       "memberCount": 2,
-      "updatedAt": "2026-08-14T12:00:00Z",
-      "members": []
+      "updatedAt": "2026-08-14T12:00:00Z"
     }
   ]
 }
 ```
+
+Para obter os membros, use
+`GET /api/integration/snapshots?groupId=<id>`. O worker so solicita esse
+detalhe para grupos cujo `whatsappId` ja esta cadastrado no CRM. Grupos
+desconhecidos nao sao hidratados nem associados automaticamente. O timestamp
+do indice e do detalhe precisa estar dentro do limite de frescor antes de
+qualquer alteracao de membership.
 
 ### Kit de integracao
 

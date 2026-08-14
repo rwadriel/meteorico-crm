@@ -361,6 +361,62 @@ describe('Group Events Processor', () => {
     }
   });
 
+  it('hydrates a summary only for a group already known by the CRM', async () => {
+    const requestedGroupIds: Array<string | undefined> = [];
+    const provider = makeSnapshotProvider();
+    provider.snapshots = async (requestedGroupId) => {
+      requestedGroupIds.push(requestedGroupId);
+      if (requestedGroupId === 'wid-group-1') {
+        return {
+          groups: [{
+            groupId: 'wid-group-1',
+            groupName: 'Grupo Teste',
+            updatedAt: '2026-08-14T11:59:30.000Z',
+            members: [{
+              id: 'known-member',
+              number: '5511999990001',
+              name: 'Known member',
+              isSaved: false,
+            }],
+          }],
+        };
+      }
+
+      return {
+        groups: [
+          {
+            groupId: 'wid-group-1',
+            groupName: 'Grupo Teste',
+            updatedAt: '2026-08-14T11:59:00.000Z',
+          },
+          {
+            groupId: 'wid-unknown',
+            groupName: 'Unknown group',
+            updatedAt: '2026-08-14T11:59:00.000Z',
+          },
+        ],
+      };
+    };
+
+    const result = await reconcileSnapshots(
+      db,
+      provider,
+      undefined,
+      new Date('2026-08-14T12:00:00.000Z'),
+    );
+
+    expect(requestedGroupIds).toEqual([undefined, 'wid-group-1']);
+    expect(result).toMatchObject({
+      groupsSeen: 2,
+      groupsReconciled: 1,
+      skippedUnknown: 1,
+      skippedIncomplete: 0,
+      oldestSnapshotAt: '2026-08-14T11:59:00.000Z',
+    });
+    expect(await db.groupMembership.count({ where: { groupId, isActive: true } })).toBe(1);
+    expect(await db.campaignParticipation.count({ where: { campaignId } })).toBe(1);
+  });
+
   it('never removes a real membership from a stale snapshot absence', async () => {
     await processEvent(db, makeEvent({ event_id: 'fresh-event-before-stale' }));
     const staleAt = new Date('2026-08-01T00:00:00.000Z');
