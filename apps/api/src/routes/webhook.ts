@@ -143,88 +143,62 @@ async function processWebhookPayloads(
   for (const payload of payloads) {
     if (payload.type === 'message' && payload.message) {
       const externalEventId = payload.message.externalMessageId;
-      const existingEvent = await db.processedEvent.findUnique({
-        where: {
-          eventSource_externalEventId: {
-            eventSource: provider.name,
-            externalEventId,
-          },
-        },
-      });
-      if (existingEvent) {
+      const claimed = await claimEvent(provider.name, externalEventId, 'message');
+      if (!claimed) {
         duplicates += 1;
         continue;
       }
 
-      const messageResult = await handleIncomingMessage(db, payload.message, provider);
-      conversationIds.push(messageResult.conversationId);
-      isNew = isNew || messageResult.isNew;
+      try {
+        const messageResult = await handleIncomingMessage(db, payload.message, provider);
+        conversationIds.push(messageResult.conversationId);
+        isNew = isNew || messageResult.isNew;
 
-      await writeAuditLog(db, {
-        action: 'inbound.received',
-        resource: 'conversations',
-        resourceId: messageResult.conversationId,
-        newValue: {
-          contactId: messageResult.contactId,
-          provider: provider.name,
-          messageType: payload.message.messageType,
-        },
-      });
-
-      const runtime = await processInboundCampaign(db, {
-        contactId: messageResult.contactId,
-        conversationId: messageResult.conversationId,
-      });
-      if (runtime.classification) {
-        classifications.push(runtime.classification);
-      }
-      if (runtime.outboundQueued) outboundQueued += 1;
-      if (runtime.duplicateOutbound) outboundDuplicates += 1;
-
-      await db.processedEvent.upsert({
-        where: {
-          eventSource_externalEventId: {
-            eventSource: provider.name,
-            externalEventId,
+        await writeAuditLog(db, {
+          action: 'inbound.received',
+          resource: 'conversations',
+          resourceId: messageResult.conversationId,
+          newValue: {
+            contactId: messageResult.contactId,
+            provider: provider.name,
+            messageType: payload.message.messageType,
           },
-        },
-        create: {
-          eventSource: provider.name,
-          externalEventId,
-          eventType: 'message',
-          result: 'processed',
-        },
-        update: { result: 'processed' },
-      });
-      processed += 1;
+        });
+
+        const runtime = await processInboundCampaign(db, {
+          contactId: messageResult.contactId,
+          conversationId: messageResult.conversationId,
+        });
+        if (runtime.classification) classifications.push(runtime.classification);
+        if (runtime.outboundQueued) outboundQueued += 1;
+        if (runtime.duplicateOutbound) outboundDuplicates += 1;
+
+        await completeClaim(provider.name, externalEventId);
+        processed += 1;
+      } catch (error) {
+        await releaseClaim(provider.name, externalEventId);
+        throw error;
+      }
       continue;
     }
 
     if (payload.type === 'status' && payload.status) {
       const externalEventId = `${payload.status.externalMessageId}:${payload.status.status}`;
-      const existingEvent = await db.processedEvent.findUnique({
-        where: {
-          eventSource_externalEventId: {
-            eventSource: provider.name,
-            externalEventId,
-          },
-        },
-      });
-      if (existingEvent) {
+      const eventType = `status:${payload.status.status}`;
+      const claimed = await claimEvent(provider.name, externalEventId, eventType);
+      if (!claimed) {
         duplicates += 1;
         continue;
       }
 
-      await handleDeliveryStatus(db, payload.status);
-      await db.processedEvent.create({
-        data: {
-          eventSource: provider.name,
-          externalEventId,
-          eventType: `status:${payload.status.status}`,
-          result: 'processed',
-        },
-      });
-      processed += 1;
+      try {
+        await handleDeliveryStatus(db, payload.status);
+        await completeClaim(provider.name, externalEventId);
+        processed += 1;
+      } catch (error) {
+        await releaseClaim(provider.name, externalEventId);
+        throw error;
+      }
     }
   }
 
@@ -238,6 +212,31 @@ async function processWebhookPayloads(
     outboundQueued,
     outboundDuplicates,
   };
+
+  async function claimEvent(
+    eventSource: string,
+    externalEventId: string,
+    eventType: string,
+  ): Promise<boolean> {
+    const result = await db.processedEvent.createMany({
+      data: [{ eventSource, externalEventId, eventType, result: 'processing' }],
+      skipDuplicates: true,
+    });
+    return result.count === 1;
+  }
+
+  async function completeClaim(eventSource: string, externalEventId: string): Promise<void> {
+    await db.processedEvent.update({
+      where: { eventSource_externalEventId: { eventSource, externalEventId } },
+      data: { result: 'processed' },
+    });
+  }
+
+  async function releaseClaim(eventSource: string, externalEventId: string): Promise<void> {
+    await db.processedEvent.deleteMany({
+      where: { eventSource, externalEventId, result: 'processing' },
+    });
+  }
 }
 
 function normalizeHeaders(rawHeaders: FastifyRequest['headers']): Record<string, string> {

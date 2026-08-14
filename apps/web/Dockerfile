@@ -20,8 +20,11 @@ RUN pnpm --filter @meteorico/shared run build && \
     pnpm --filter @meteorico/web run build
 
 FROM nginx:alpine AS production
-COPY --from=build /app/apps/web/dist /usr/share/nginx/html
-COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
+RUN sed -i 's|^pid .*;|pid /tmp/nginx.pid;|' /etc/nginx/nginx.conf && \
+    chown -R nginx:nginx /var/cache/nginx /etc/nginx/conf.d
+COPY --chown=nginx:nginx --from=build /app/apps/web/dist /usr/share/nginx/html
+COPY --chown=nginx:nginx apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+USER nginx
+EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:80/ || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:8080/ || exit 1

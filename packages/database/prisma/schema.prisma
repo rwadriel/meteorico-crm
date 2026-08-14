@@ -701,7 +701,7 @@ model OutboundRecord {
   campaignId        String?   @map("campaign_id")
   conversationId    String?   @map("conversation_id")
   provider          String    @default("")
-  providerMessageId String?   @map("provider_message_id")
+  providerMessageId String?   @unique @map("provider_message_id")
   status            String    @default("pending")
   attempts          Int       @default(0)
   sentAt            DateTime? @map("sent_at")

@@ -7,6 +7,7 @@ import rateLimit from '@fastify/rate-limit';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import multipart from '@fastify/multipart';
+import { assertRuntimeConfig } from '@meteorico/shared';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { campaignRoutes } from './routes/campaigns.js';
@@ -34,6 +35,8 @@ import { createLogger } from './logger.js';
 const isProduction = (process.env.NODE_ENV ?? 'development') === 'production';
 
 export async function buildApp(): Promise<FastifyInstance> {
+  assertRuntimeConfig('api');
+
   const app = Fastify({
     logger: createLogger(),
     genReqId: () => crypto.randomUUID(),

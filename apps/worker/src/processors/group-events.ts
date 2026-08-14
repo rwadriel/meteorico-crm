@@ -3,6 +3,7 @@ import { Prisma } from '@meteorico/database';
 import type { WmEvent, WmParticipant } from '../adapters/whatsapp-manager.js';
 import { createWorkerLogger } from '../logger.js';
 import { normalizeAllowedManagerPhone } from '../participant-safety.js';
+import { lockGroupMemberships } from './membership-lock.js';
 
 const logger = createWorkerLogger();
 
@@ -39,25 +40,27 @@ export async function processEvent(
   });
 
   if (!group) {
-    await db.processedEvent.create({
-      data: {
+    await db.processedEvent.createMany({
+      data: [{
         eventSource: 'whatsapp-manager',
         externalEventId: event.event_id,
         eventType: event.event,
         result: 'dead-letter:unknown-group',
-      },
+      }],
+      skipDuplicates: true,
     });
     return { success: true };
   }
 
   if (!ENTER_EVENTS.has(event.event) && !LEAVE_EVENTS.has(event.event)) {
-    await db.processedEvent.create({
-      data: {
+    await db.processedEvent.createMany({
+      data: [{
         eventSource: 'whatsapp-manager',
         externalEventId: event.event_id,
         eventType: event.event,
         result: 'skipped:non-membership-event',
-      },
+      }],
+      skipDuplicates: true,
     });
     return { success: true };
   }
@@ -67,6 +70,17 @@ export async function processEvent(
   let participantsProcessed = 0;
 
   await db.$transaction(async (tx) => {
+    await lockGroupMemberships(tx, group.id);
+    const claimedByAnotherWorker = await tx.processedEvent.findUnique({
+      where: {
+        eventSource_externalEventId: {
+          eventSource: 'whatsapp-manager',
+          externalEventId: event.event_id,
+        },
+      },
+    });
+    if (claimedByAnotherWorker) return;
+
     for (let i = 0; i < event.participants.length; i++) {
       const participant = event.participants[i];
       const phone = normalizeAllowedManagerPhone(participant.number);

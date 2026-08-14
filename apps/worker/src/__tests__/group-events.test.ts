@@ -197,6 +197,91 @@ describe('Group Events Processor', () => {
     expect(memberships).toHaveLength(1);
   });
 
+  it('serializes simultaneous membership events without duplicates', async () => {
+    await Promise.all([
+      processEvent(db, makeEvent({ event_id: 'concurrent-enter-1' })),
+      processEvent(db, makeEvent({ event_id: 'concurrent-enter-2' })),
+    ]);
+
+    const contact = await db.contact.findUnique({ where: { phone: '5511999990001' } });
+    expect(await db.groupMembership.count({
+      where: { groupId, contactId: contact!.id, isActive: true },
+    })).toBe(1);
+    expect(await db.campaignParticipation.count({
+      where: { campaignId, contactId: contact!.id },
+    })).toBe(1);
+    expect(await db.group.findUnique({ where: { id: groupId } })).toMatchObject({
+      currentCount: 1,
+    });
+  });
+
+  it('serializes a join and snapshot reconciliation for the same member', async () => {
+    const provider = makeSnapshotProvider({
+      updatedAt: new Date().toISOString(),
+      members: [
+        { id: 'p1', number: '5511999990001', name: 'Test User', isSaved: false },
+      ],
+    });
+
+    await Promise.all([
+      processEvent(db, makeEvent({ event_id: 'join-during-snapshot' })),
+      reconcileSnapshots(db, provider),
+    ]);
+
+    const contact = await db.contact.findUnique({ where: { phone: '5511999990001' } });
+    expect(await db.groupMembership.count({
+      where: { groupId, contactId: contact!.id, isActive: true },
+    })).toBe(1);
+    expect(await db.campaignParticipation.count({
+      where: { campaignId, contactId: contact!.id },
+    })).toBe(1);
+  });
+
+  it('does not let an older snapshot undo newer join or leave evidence', async () => {
+    await processEvent(db, makeEvent({
+      event_id: 'newer-join',
+      ts: '2026-08-14T12:00:00.000Z',
+    }));
+    await reconcileSnapshots(
+      db,
+      makeSnapshotProvider({
+        updatedAt: '2026-08-14T11:59:00.000Z',
+        members: [],
+      }),
+      undefined,
+      new Date('2026-08-14T12:00:30.000Z'),
+    );
+
+    const contact = await db.contact.findUnique({ where: { phone: '5511999990001' } });
+    expect(await db.groupMembership.count({
+      where: { groupId, contactId: contact!.id, isActive: true },
+    })).toBe(1);
+
+    await processEvent(db, makeEvent({
+      event_id: 'newer-leave',
+      event: 'saiu',
+      ts: '2026-08-14T12:01:00.000Z',
+    }));
+    await reconcileSnapshots(
+      db,
+      makeSnapshotProvider({
+        updatedAt: '2026-08-14T12:00:30.000Z',
+        members: [
+          { id: 'p1', number: '5511999990001', name: 'Test User', isSaved: false },
+        ],
+      }),
+      undefined,
+      new Date('2026-08-14T12:01:30.000Z'),
+    );
+
+    expect(await db.groupMembership.count({
+      where: { groupId, contactId: contact!.id, isActive: true },
+    })).toBe(0);
+    expect(await db.group.findUnique({ where: { id: groupId } })).toMatchObject({
+      currentCount: 0,
+    });
+  });
+
   it('handles two participants in the same event', async () => {
     const event = makeEvent({
       event_id: 'multi-1',
@@ -515,7 +600,10 @@ describe('Group Events Processor', () => {
   });
 
   it('accepts a fresh empty snapshot as trustworthy absence', async () => {
-    await processEvent(db, makeEvent({ event_id: 'membership-before-fresh-empty' }));
+    await processEvent(db, makeEvent({
+      event_id: 'membership-before-fresh-empty',
+      ts: '2026-08-14T11:58:00.000Z',
+    }));
 
     const result = await reconcileSnapshots(
       db,

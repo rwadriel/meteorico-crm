@@ -18,6 +18,15 @@ export function createLogger(): PinoLoggerOptions {
       paths: REDACT_PATHS,
       censor: '[REDACTED]',
     },
+    serializers: {
+      req(request: { method?: string; url?: string; remoteAddress?: string }) {
+        return {
+          method: request.method,
+          url: sanitizeRequestUrl(request.url ?? ''),
+          remoteAddress: request.remoteAddress,
+        };
+      },
+    },
     ...(isDev
       ? {
           transport: {
@@ -30,4 +39,9 @@ export function createLogger(): PinoLoggerOptions {
         }
       : {}),
   };
+}
+
+export function sanitizeRequestUrl(value: string): string {
+  const queryIndex = value.indexOf('?');
+  return queryIndex === -1 ? value : `${value.slice(0, queryIndex)}?[REDACTED]`;
 }

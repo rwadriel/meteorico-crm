@@ -15,6 +15,7 @@ describe('Database Constraints', () => {
   });
 
   beforeEach(async () => {
+    await db.outboundRecord.deleteMany();
     await db.groupEvent.deleteMany();
     await db.groupMembership.deleteMany();
     await db.campaignParticipation.deleteMany();
@@ -116,6 +117,54 @@ describe('Database Constraints', () => {
     await expect(
       db.processedEvent.create({
         data: { eventSource: 'whatsapp_manager', externalEventId: 'ext-1', eventType: 'leave' },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('allows membership history but enforces one active membership per contact and group', async () => {
+    const role = await db.role.create({ data: { name: 'owner-membership', isSystem: true } });
+    const admin = await db.adminUser.create({
+      data: { email: 'admin-m@test.dev', passwordHash: 'hash', name: 'A', roleId: role.id },
+    });
+    const campaign = await db.campaign.create({
+      data: { name: 'Membership Test', slug: 'membership-test', createdBy: admin.id },
+    });
+    const group = await db.group.create({
+      data: { campaignId: campaign.id, name: 'Group', category: 'NOVO' },
+    });
+    const contact = await db.contact.create({
+      data: { phone: '+5511999990020', name: 'Contact' },
+    });
+
+    await db.groupMembership.create({
+      data: {
+        groupId: group.id,
+        contactId: contact.id,
+        isActive: false,
+        leftAt: new Date(),
+      },
+    });
+    await db.groupMembership.create({
+      data: { groupId: group.id, contactId: contact.id, isActive: true },
+    });
+
+    await expect(
+      db.groupMembership.create({
+        data: { groupId: group.id, contactId: contact.id, isActive: true },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('enforces unique provider message ids while allowing null values', async () => {
+    await db.outboundRecord.create({
+      data: { idempotencyKey: 'outbound-1', providerMessageId: 'provider-message-1' },
+    });
+    await db.outboundRecord.create({ data: { idempotencyKey: 'outbound-null-1' } });
+    await db.outboundRecord.create({ data: { idempotencyKey: 'outbound-null-2' } });
+
+    await expect(
+      db.outboundRecord.create({
+        data: { idempotencyKey: 'outbound-2', providerMessageId: 'provider-message-1' },
       }),
     ).rejects.toThrow();
   });

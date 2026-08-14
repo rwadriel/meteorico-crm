@@ -4,6 +4,7 @@ import { groupManagerSnapshotStaleAfterSeconds } from '@meteorico/shared';
 import type { WhatsAppManagerProvider, WmSnapshotGroup } from '../adapters/whatsapp-manager.js';
 import { createWorkerLogger } from '../logger.js';
 import { normalizeAllowedManagerPhone } from '../participant-safety.js';
+import { lockGroupMemberships } from './membership-lock.js';
 
 const logger = createWorkerLogger();
 
@@ -124,7 +125,10 @@ export async function reconcileSnapshots(
       continue;
     }
 
-    await reconcileGroup(db, group, snapshot, result);
+    await db.$transaction(async (tx) => {
+      await lockGroupMemberships(tx, group.id);
+      await reconcileGroup(tx as unknown as PrismaClient, group, snapshot, result);
+    });
     result.groupsReconciled++;
   }
 
@@ -142,22 +146,29 @@ async function reconcileGroup(
   snapshot: WmSnapshotGroup,
   result: ReconciliationResult,
 ) {
+  const snapshotAt = new Date(snapshot.updatedAt);
   const snapshotPhones = new Set<string>();
   for (const member of snapshot.members ?? []) {
     const phone = normalizeAllowedManagerPhone(member.number);
     if (phone) snapshotPhones.add(phone);
   }
 
-  const activeMemberships = await db.groupMembership.findMany({
-    where: { groupId: group.id, isActive: true },
+  const memberships = await db.groupMembership.findMany({
+    where: { groupId: group.id },
     include: { contact: true },
+    orderBy: { createdAt: 'desc' },
   });
 
-  const activePhones = new Map<string, string>();
-  for (const m of activeMemberships) {
+  const activePhones = new Map<string, { id: string; joinedAt: Date }>();
+  const latestMemberships = new Map<string, { isActive: boolean; leftAt: Date | null }>();
+  for (const m of memberships) {
     const phone = normalizeAllowedManagerPhone(m.contact.normalizedPhone ?? m.contact.phone);
-    if (phone) {
-      activePhones.set(phone, m.id);
+    if (!phone) continue;
+    if (!latestMemberships.has(phone)) {
+      latestMemberships.set(phone, { isActive: m.isActive, leftAt: m.leftAt });
+    }
+    if (m.isActive && !activePhones.has(phone)) {
+      activePhones.set(phone, { id: m.id, joinedAt: m.joinedAt });
     }
   }
 
@@ -165,6 +176,8 @@ async function reconcileGroup(
     const phone = normalizeAllowedManagerPhone(member.number);
     if (!phone) continue;
     if (activePhones.has(phone)) continue;
+    const latestMembership = latestMemberships.get(phone);
+    if (latestMembership?.leftAt && latestMembership.leftAt > snapshotAt) continue;
 
     let contact = await db.contact.findFirst({
       where: { OR: [{ phone }, { normalizedPhone: phone }] },
@@ -257,20 +270,24 @@ async function reconcileGroup(
     result.membershipsAdded++;
   }
 
-  for (const [phone, membershipId] of activePhones) {
+  for (const [phone, membership] of activePhones) {
     if (snapshotPhones.has(phone)) continue;
+    if (membership.joinedAt > snapshotAt) continue;
 
     await db.groupMembership.update({
-      where: { id: membershipId },
+      where: { id: membership.id },
       data: { isActive: false, leftAt: new Date() },
     });
 
     result.membershipsRemoved++;
   }
 
+  const activeCount = await db.groupMembership.count({
+    where: { groupId: group.id, isActive: true },
+  });
   await db.group.update({
     where: { id: group.id },
-    data: { currentCount: snapshotPhones.size },
+    data: { currentCount: activeCount },
   });
 }
 

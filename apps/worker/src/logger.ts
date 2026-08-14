@@ -6,6 +6,10 @@ const REDACT_PATHS = [
   'secret',
   'phone',
   'authorization',
+  'inviteLink',
+  'payload',
+  'rawPayload',
+  'participants[*].number',
 ];
 
 export function createWorkerLogger() {

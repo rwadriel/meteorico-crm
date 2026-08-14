@@ -26,7 +26,7 @@
 | WORKER_POLLING_INTERVAL_MS | worker | Intervalo de polling em ms | 10000 | Logs do worker |
 | WORKER_RECONCILIATION_INTERVAL_MS | worker | Intervalo de reconciliacao em ms | 3600000 | Logs do worker |
 | SEED_ADMIN_EMAIL | database | Email do admin inicial no seed | admin@meteorico.dev | Login com credenciais |
-| SEED_ADMIN_PASSWORD | database | Senha do admin inicial no seed | meteorico-dev-2026 | Login com credenciais |
+| SEED_ADMIN_PASSWORD | database | Senha forte do admin inicial; obrigatoria ao executar o seed | - | Login com credenciais |
 | SEED_ADMIN_NAME | database | Nome do admin inicial | Admin Dev | - |
 
 ## Meta WhatsApp Cloud API

@@ -255,6 +255,31 @@ describe('Meta WhatsApp webhook integration', () => {
     expect(await db.outboundRecord.count()).toBe(0);
   });
 
+  it('claims two simultaneous copies of the same webhook only once', async () => {
+    const payload = metaPayload({
+      messages: [
+        {
+          id: 'wamid.concurrent-duplicate',
+          from: TEST_PHONE,
+          timestamp: '1786400002',
+          type: 'text',
+          text: { body: 'Mensagem concorrente' },
+        },
+      ],
+    });
+
+    const responses = await Promise.all([postMeta(payload), postMeta(payload)]);
+    expect(responses.every((response) => response.statusCode === 200)).toBe(true);
+    expect(responses.reduce((sum, response) => sum + response.json().processed, 0)).toBe(1);
+    expect(responses.reduce((sum, response) => sum + response.json().duplicates, 0)).toBe(1);
+    expect(await db.conversationMessage.count({
+      where: { externalMessageId: 'wamid.concurrent-duplicate' },
+    })).toBe(1);
+    expect(await db.processedEvent.count({
+      where: { eventSource: 'meta_cloud', externalEventId: 'wamid.concurrent-duplicate' },
+    })).toBe(1);
+  });
+
   it('classifies a student as aluno without assigning a commercial group', async () => {
     const contact = await db.contact.create({
       data: {

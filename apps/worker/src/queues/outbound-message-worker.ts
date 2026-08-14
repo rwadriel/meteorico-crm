@@ -18,7 +18,7 @@ interface OutboundMessageJob {
   idempotencyKey: string;
 }
 
-async function processOutboundMessage(job: Job<OutboundMessageJob>): Promise<void> {
+export async function processOutboundMessage(job: Job<OutboundMessageJob>): Promise<void> {
   const db = getClient();
   const { conversationId, idempotencyKey, content, messageType, contactId, campaignId } = job.data;
 
@@ -43,6 +43,15 @@ async function processOutboundMessage(job: Job<OutboundMessageJob>): Promise<voi
         attempts: 0,
       },
     });
+  }
+
+  if (process.env.WHATSAPP_OUTBOUND_ENABLED !== 'true') {
+    await db.outboundRecord.update({
+      where: { idempotencyKey },
+      data: { status: 'blocked', lastError: 'outbound_disabled' },
+    });
+    logger.warn({ conversationId, idempotencyKey }, 'Outbound blocked by kill switch');
+    return;
   }
 
   await db.outboundRecord.update({

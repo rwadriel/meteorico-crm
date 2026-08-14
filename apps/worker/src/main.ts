@@ -1,4 +1,5 @@
 import { getClient, disconnect } from '@meteorico/database';
+import { assertRuntimeConfig } from '@meteorico/shared';
 import { createWorkerLogger } from './logger.js';
 import { createProvider } from './adapters/whatsapp-manager.js';
 import { processEventBatch } from './processors/group-events.js';
@@ -198,6 +199,7 @@ async function runReconciliationCycle(): Promise<void> {
 }
 
 async function start(): Promise<void> {
+  assertRuntimeConfig('worker');
   logger.info('Meteorico CRM Worker starting...');
 
   logger.info({

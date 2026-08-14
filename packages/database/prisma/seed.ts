@@ -117,8 +117,11 @@ async function main() {
   }
 
   const adminEmail = process.env.SEED_ADMIN_EMAIL ?? 'admin@meteorico.dev';
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? 'meteorico-dev-2026';
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
   const adminName = process.env.SEED_ADMIN_NAME ?? 'Admin Dev';
+  if (!adminPassword) {
+    throw new Error('SEED_ADMIN_PASSWORD is required to seed the admin user');
+  }
 
   const ownerRole = await prisma.role.findUnique({ where: { name: 'owner' } });
   if (!ownerRole) throw new Error('Owner role not found');
