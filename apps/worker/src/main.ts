@@ -5,6 +5,12 @@ import { processEventBatch } from './processors/group-events.js';
 import { reconcileSnapshots } from './processors/snapshot-reconciliation.js';
 import { startHealthServer } from './health.js';
 import {
+  recordProviderFailure,
+  recordSnapshotObservation,
+  recordSuccessfulPoll,
+  sanitizeProviderError,
+} from './integration-health.js';
+import {
   startOutboundMessageWorker,
   startIntegrationTaskWorker,
   closeRedisConnection,
@@ -20,71 +26,98 @@ const RECONCILIATION_INTERVAL_MS = parseInt(
   process.env.WORKER_RECONCILIATION_INTERVAL_MS ?? '3600000',
   10,
 );
+let pollingInProgress = false;
+let reconciliationInProgress = false;
 
 async function pollEvents(): Promise<void> {
   const provider = createProvider();
   if (!provider) return;
 
   const db = getClient();
-
-  const cursorRecord = await db.integrationCursor.findUnique({
-    where: { integration: 'whatsapp-manager' },
-  });
-
-  if (!cursorRecord) {
-    const health = await provider.health();
-    await db.integrationCursor.create({
-      data: {
-        integration: 'whatsapp-manager',
-        cursor: String(health.lastSeq),
-        lastPolledAt: new Date(),
-      },
-    });
-    logger.info(
-      { lastSeq: health.lastSeq },
-      'WhatsApp Manager cursor initialized at latest event',
-    );
-    return;
-  }
-
-  let since = parseInt(cursorRecord.cursor, 10);
-  let totalProcessed = 0;
-
-  let hasMore = true;
-  while (hasMore) {
-    const response = await provider.events(since);
-
-    if (response.events.length === 0) break;
-
-    const result = await processEventBatch(db, response.events);
-    totalProcessed += result.processed;
-
-    if (result.failed > 0) {
-      logger.warn({ failed: result.failed }, 'Some events failed processing');
-    }
-    if (result.deadLettered > 0) {
-      logger.warn({ deadLettered: result.deadLettered }, 'Events dead-lettered');
+  try {
+    const providerHealth = await provider.health();
+    if (!providerHealth.ok || providerHealth.connected === false) {
+      throw new Error(providerHealth.connected === false
+        ? 'WhatsApp Manager: provider disconnected'
+        : 'WhatsApp Manager: provider unhealthy');
     }
 
-    since = response.nextSince;
-    hasMore = response.hasMore;
-
-    await db.integrationCursor.upsert({
+    const cursorRecord = await db.integrationCursor.findUnique({
       where: { integration: 'whatsapp-manager' },
-      create: {
-        integration: 'whatsapp-manager',
-        cursor: String(since),
-        lastPolledAt: new Date(),
-      },
-      update: {
-        cursor: String(since),
-        lastPolledAt: new Date(),
-      },
     });
-  }
 
-  if (totalProcessed > 0) {
-    logger.info({ totalProcessed }, 'Polling cycle complete');
+    if (!cursorRecord || cursorRecord.lastPolledAt === null) {
+      const transition = await recordSuccessfulPoll(db, {
+        cursor: providerHealth.lastSeq,
+        providerLastSeq: providerHealth.lastSeq,
+        providerConnected: providerHealth.connected,
+      });
+      logger.info({
+        event: 'integration_cursor_initialized',
+        cursor: providerHealth.lastSeq,
+        recovered: transition.recovered,
+      }, 'WhatsApp Manager cursor initialized at latest event');
+      return;
+    }
+
+    let since = parseInt(cursorRecord.cursor, 10);
+    let totalProcessed = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const response = await provider.events(since);
+
+      if (response.events.length > 0) {
+        const result = await processEventBatch(db, response.events);
+        totalProcessed += result.processed;
+
+        if (result.failed > 0) {
+          logger.warn({ failed: result.failed }, 'Some events failed processing');
+        }
+        if (result.deadLettered > 0) {
+          logger.warn({ deadLettered: result.deadLettered }, 'Events dead-lettered');
+        }
+
+        since = response.nextSince;
+      }
+
+      const transition = await recordSuccessfulPoll(db, {
+        cursor: since,
+        providerLastSeq: response.lastSeq,
+        providerConnected: providerHealth.connected,
+      });
+      if (transition.recovered) {
+        logger.info({ event: 'integration_health_transition', status: 'recovered' },
+          'Group Manager provider recovered');
+      }
+
+      if (response.events.length === 0) break;
+      hasMore = response.hasMore;
+    }
+
+    logger.info({
+      event: 'poll_success',
+      totalProcessed,
+      cursor: since,
+      providerLastSeq: providerHealth.lastSeq,
+    }, 'Polling cycle complete');
+  } catch (error) {
+    const message = await recordProviderFailure(
+      db,
+      error,
+      {
+        scope: 'poll',
+        ...(error instanceof Error && error.message.includes('provider disconnected')
+          ? { providerConnected: false }
+          : {}),
+      },
+    );
+    logger.warn({
+      event: 'integration_health_transition',
+      status: message.includes('provider disconnected') ? 'disconnected' : 'degraded',
+    }, 'Group Manager integration health changed');
+    logger.error({ event: 'provider_error', error: message }, 'Polling cycle failed');
+    throw error;
   }
 }
 
@@ -96,12 +129,71 @@ async function runReconciliation(): Promise<void> {
 
   try {
     const result = await reconcileSnapshots(db, provider);
-    if (result.groupsReconciled > 0) {
-      logger.info(result, 'Reconciliation cycle complete');
+    const snapshotReconciled = result.groupsReconciled > 0
+      && result.skippedStale === 0
+      && result.skippedIncomplete === 0
+      && result.skippedDisconnected === 0;
+    const transition = await recordSnapshotObservation(db, {
+      providerSnapshotAt: result.oldestSnapshotAt
+        ? new Date(result.oldestSnapshotAt)
+        : null,
+      ...(snapshotReconciled ? { successfulAt: new Date() } : {}),
+      ...(result.providerConnected === null
+        ? {}
+        : { providerConnected: result.providerConnected }),
+    });
+    if (transition.recovered) {
+      logger.info({
+        event: 'integration_health_transition',
+        status: 'recovered',
+        source: 'snapshot',
+      }, 'Group Manager snapshot channel recovered');
     }
+    logger.info({ event: 'reconciliation_success', ...result },
+      'Reconciliation cycle complete');
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    logger.error({ error: message }, 'Reconciliation failed');
+    const message = await recordProviderFailure(db, err, { scope: 'snapshot' });
+    logger.error({ event: 'provider_error', error: message }, 'Reconciliation failed');
+  }
+}
+
+async function runPollingCycle(): Promise<void> {
+  if (pollingInProgress) {
+    logger.warn({ event: 'poll_skipped', reason: 'cycle_in_progress' },
+      'Overlapping polling cycle skipped');
+    return;
+  }
+
+  pollingInProgress = true;
+  try {
+    await pollEvents();
+  } catch (error) {
+    logger.error({
+      event: 'poll_cycle_unhandled',
+      error: sanitizeProviderError(error),
+    }, 'Polling cycle ended with an error');
+  } finally {
+    pollingInProgress = false;
+  }
+}
+
+async function runReconciliationCycle(): Promise<void> {
+  if (reconciliationInProgress) {
+    logger.warn({ event: 'reconciliation_skipped', reason: 'cycle_in_progress' },
+      'Overlapping reconciliation cycle skipped');
+    return;
+  }
+
+  reconciliationInProgress = true;
+  try {
+    await runReconciliation();
+  } catch (error) {
+    logger.error({
+      event: 'reconciliation_cycle_unhandled',
+      error: sanitizeProviderError(error),
+    }, 'Reconciliation cycle ended with an error');
+  } finally {
+    reconciliationInProgress = false;
   }
 }
 
@@ -124,30 +216,16 @@ async function start(): Promise<void> {
   }
   const integrationWorker = startIntegrationTaskWorker();
 
-  const pollingTimer = setInterval(async () => {
-    try {
-      await pollEvents();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      logger.error({ error: message }, 'Polling cycle failed');
-    }
+  await runPollingCycle();
+  await runReconciliationCycle();
+
+  const pollingTimer = setInterval(() => {
+    void runPollingCycle();
   }, POLLING_INTERVAL_MS);
 
-  const reconciliationTimer = setInterval(async () => {
-    try {
-      await runReconciliation();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      logger.error({ error: message }, 'Reconciliation cycle failed');
-    }
+  const reconciliationTimer = setInterval(() => {
+    void runReconciliationCycle();
   }, RECONCILIATION_INTERVAL_MS);
-
-  try {
-    await pollEvents();
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    logger.error({ error: message }, 'Initial polling failed');
-  }
 
   logger.info('Worker ready');
 

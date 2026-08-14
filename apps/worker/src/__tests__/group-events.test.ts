@@ -23,6 +23,30 @@ function makeEvent(overrides: Partial<WmEvent> = {}): WmEvent {
   };
 }
 
+function makeSnapshotProvider(options: {
+  connected?: boolean;
+  updatedAt?: string;
+  members?: Array<{ id: string; number: string | null; name: string; isSaved: boolean }>;
+} = {}): WhatsAppManagerProvider {
+  return {
+    health: async () => ({
+      ok: true,
+      lastSeq: 0,
+      events: 0,
+      ...(options.connected === undefined ? {} : { connected: options.connected }),
+    }),
+    events: async () => ({ events: [], nextSince: 0, hasMore: false, lastSeq: 0 }),
+    snapshots: async () => ({
+      groups: [{
+        groupId: 'wid-group-1',
+        groupName: 'Grupo Teste',
+        updatedAt: options.updatedAt ?? new Date().toISOString(),
+        members: options.members ?? [],
+      }],
+    }),
+  };
+}
+
 async function cleanDb(db: PrismaClient) {
   await db.auditLog.deleteMany();
   await db.groupEvent.deleteMany();
@@ -335,6 +359,251 @@ describe('Group Events Processor', () => {
       restoreEnv('DEPLOYMENT_ENV', previousDeployment);
       restoreEnv('WHATSAPP_STAGING_ALLOWLIST', previousAllowlist);
     }
+  });
+
+  it('never removes a real membership from a stale snapshot absence', async () => {
+    await processEvent(db, makeEvent({ event_id: 'fresh-event-before-stale' }));
+    const staleAt = new Date('2026-08-01T00:00:00.000Z');
+
+    const result = await reconcileSnapshots(
+      db,
+      makeSnapshotProvider({ updatedAt: staleAt.toISOString(), members: [] }),
+      undefined,
+      new Date('2026-08-14T12:00:00.000Z'),
+    );
+
+    expect(result).toMatchObject({ skippedStale: 1, groupsReconciled: 0 });
+    expect(await db.groupMembership.count({ where: { groupId, isActive: true } })).toBe(1);
+    expect(await db.campaignParticipation.count({
+      where: { campaignId, status: 'active' },
+    })).toBe(1);
+  });
+
+  it('never fabricates membership from a stale snapshot participant', async () => {
+    const result = await reconcileSnapshots(
+      db,
+      makeSnapshotProvider({
+        updatedAt: '2026-08-01T00:00:00.000Z',
+        members: [{
+          id: 'stale-member',
+          number: '5511999990001',
+          name: 'Stale User',
+          isSaved: false,
+        }],
+      }),
+      undefined,
+      new Date('2026-08-14T12:00:00.000Z'),
+    );
+
+    expect(result.skippedStale).toBe(1);
+    expect(await db.contact.count()).toBe(0);
+    expect(await db.groupMembership.count()).toBe(0);
+    expect(await db.campaignParticipation.count()).toBe(0);
+  });
+
+  it('uses the oldest known group snapshot for global freshness', async () => {
+    await db.group.create({
+      data: {
+        campaignId,
+        whatsappId: 'wid-group-2',
+        name: 'Grupo Teste 2',
+        category: 'novo',
+      },
+    });
+    const provider = makeSnapshotProvider();
+    provider.snapshots = async () => ({
+      groups: [
+        {
+          groupId: 'wid-group-1',
+          groupName: 'Grupo Teste',
+          updatedAt: '2026-08-14T11:59:00.000Z',
+          members: [],
+        },
+        {
+          groupId: 'wid-group-2',
+          groupName: 'Grupo Teste 2',
+          updatedAt: '2026-08-01T00:00:00.000Z',
+          members: [],
+        },
+      ],
+    });
+
+    const result = await reconcileSnapshots(
+      db,
+      provider,
+      undefined,
+      new Date('2026-08-14T12:00:00.000Z'),
+    );
+
+    expect(result).toMatchObject({
+      groupsSeen: 2,
+      groupsReconciled: 1,
+      skippedStale: 1,
+      oldestSnapshotAt: '2026-08-01T00:00:00.000Z',
+    });
+  });
+
+  it('skips reconciliation without requesting snapshots when provider is disconnected', async () => {
+    let snapshotsRequested = 0;
+    const provider = makeSnapshotProvider({ connected: false });
+    provider.snapshots = async () => {
+      snapshotsRequested++;
+      return { groups: [] };
+    };
+
+    const result = await reconcileSnapshots(db, provider);
+
+    expect(result.skippedDisconnected).toBe(1);
+    expect(snapshotsRequested).toBe(0);
+    expect(await db.groupMembership.count()).toBe(0);
+  });
+
+  it('accepts a fresh empty snapshot as trustworthy absence', async () => {
+    await processEvent(db, makeEvent({ event_id: 'membership-before-fresh-empty' }));
+
+    const result = await reconcileSnapshots(
+      db,
+      makeSnapshotProvider({
+        updatedAt: '2026-08-14T11:59:00.000Z',
+        members: [],
+      }),
+      undefined,
+      new Date('2026-08-14T12:00:00.000Z'),
+    );
+
+    expect(result).toMatchObject({ groupsReconciled: 1, membershipsRemoved: 1 });
+    expect(await db.groupMembership.count({ where: { groupId, isActive: true } })).toBe(0);
+    expect(await db.group.findUnique({ where: { id: groupId } })).toMatchObject({
+      currentCount: 0,
+    });
+  });
+
+  it('ignores snapshots with invalid timestamps', async () => {
+    const result = await reconcileSnapshots(
+      db,
+      makeSnapshotProvider({
+        updatedAt: 'not-a-date',
+        members: [{
+          id: 'invalid-time-member',
+          number: '5511999990001',
+          name: 'Invalid Time',
+          isSaved: false,
+        }],
+      }),
+    );
+
+    expect(result).toMatchObject({ skippedStale: 1, oldestSnapshotAt: null });
+    expect(await db.contact.count()).toBe(0);
+  });
+
+  it('ignores snapshots implausibly dated in the future', async () => {
+    const result = await reconcileSnapshots(
+      db,
+      makeSnapshotProvider({
+        updatedAt: '2026-08-15T12:00:00.000Z',
+        members: [{
+          id: 'future-member',
+          number: '5511999990001',
+          name: 'Future User',
+          isSaved: false,
+        }],
+      }),
+      undefined,
+      new Date('2026-08-14T12:00:00.000Z'),
+    );
+
+    expect(result).toMatchObject({ skippedStale: 1, oldestSnapshotAt: null });
+    expect(await db.contact.count()).toBe(0);
+  });
+
+  it('keeps fresh snapshot reconciliation idempotent', async () => {
+    const now = new Date('2026-08-14T12:00:00.000Z');
+    const provider = makeSnapshotProvider({
+      updatedAt: '2026-08-14T11:59:00.000Z',
+      members: [{
+        id: 'fresh-member',
+        number: '5511999990001',
+        name: 'Fresh User',
+        isSaved: false,
+      }],
+    });
+
+    await reconcileSnapshots(db, provider, undefined, now);
+    await reconcileSnapshots(db, provider, undefined, now);
+
+    expect(await db.groupMembership.count({ where: { groupId } })).toBe(1);
+    expect(await db.campaignParticipation.count({ where: { campaignId } })).toBe(1);
+    expect(await db.contact.count()).toBe(1);
+  });
+
+  it('continues to process trustworthy incremental events after a stale snapshot', async () => {
+    await reconcileSnapshots(
+      db,
+      makeSnapshotProvider({ updatedAt: '2026-08-01T00:00:00.000Z' }),
+      undefined,
+      new Date('2026-08-14T12:00:00.000Z'),
+    );
+
+    const eventResult = await processEvent(db, makeEvent({ event_id: 'event-after-stale' }));
+
+    expect(eventResult.success).toBe(true);
+    expect(await db.groupMembership.count({ where: { groupId, isActive: true } })).toBe(1);
+    expect(await db.campaignParticipation.count({ where: { campaignId } })).toBe(1);
+  });
+
+  it('regresses disconnect, stale snapshot and safe recovery without duplicates', async () => {
+    const now = new Date('2026-08-14T12:00:00.000Z');
+
+    const baseline = await reconcileSnapshots(
+      db,
+      makeSnapshotProvider({
+        connected: true,
+        updatedAt: '2026-08-14T11:59:00.000Z',
+        members: [],
+      }),
+      undefined,
+      now,
+    );
+    expect(baseline).toMatchObject({ groupsReconciled: 1, skippedStale: 0 });
+
+    const disconnected = await reconcileSnapshots(
+      db,
+      makeSnapshotProvider({
+        connected: false,
+        updatedAt: '2026-08-01T00:00:00.000Z',
+        members: [{
+          id: 'joined-while-disconnected',
+          number: '5511999990001',
+          name: 'Controlled Fixture',
+          isSaved: false,
+        }],
+      }),
+      undefined,
+      now,
+    );
+    expect(disconnected.skippedDisconnected).toBe(1);
+    expect(await db.campaignParticipation.count({ where: { campaignId } })).toBe(0);
+
+    const reconnectedProvider = makeSnapshotProvider({
+      connected: true,
+      updatedAt: '2026-08-14T12:00:00.000Z',
+      members: [{
+        id: 'joined-after-reconnect',
+        number: '5511999990001',
+        name: 'Controlled Fixture',
+        isSaved: false,
+      }],
+    });
+    const recovered = await reconcileSnapshots(db, reconnectedProvider, undefined, now);
+    await reconcileSnapshots(db, reconnectedProvider, undefined, now);
+
+    expect(recovered).toMatchObject({
+      groupsReconciled: 1,
+      membershipsAdded: 1,
+      skippedStale: 0,
+    });
+    expect(await db.groupMembership.count({ where: { groupId, isActive: true } })).toBe(1);
+    expect(await db.campaignParticipation.count({ where: { campaignId } })).toBe(1);
   });
 
   it('skips non-membership events (baseline, grupo_criado, alteracao)', async () => {

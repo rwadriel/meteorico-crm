@@ -18,6 +18,7 @@
 | REDIS_URL | api, worker | URL de conexao Redis (BullMQ) | redis://localhost:6379 | GET /api/queues/status |
 | WHATSAPP_MANAGER_URL | worker | URL da API WhatsApp Manager | - | Health check do worker |
 | WHATSAPP_MANAGER_INTEGRATION_TOKEN | worker | Token de integracao WhatsApp Manager | - | Worker conecta e drena eventos |
+| GROUP_MANAGER_SNAPSHOT_STALE_AFTER_SECONDS | api, worker | Idade maxima aceita para reconciliar um snapshot de grupos | 7200 | `/api/integration/health` mostra `snapshotFresh: true` |
 | XAI_API_KEY | api | API key xAI/Grok para diagnostico | - | POST /api/diagnosis/playground |
 | XAI_API_BASE_URL | api | URL base da API xAI | https://api.x.ai/v1 | - |
 | XAI_MODEL | api | Modelo xAI a usar | grok-3-mini | - |
@@ -48,6 +49,11 @@ repositorio e o `.env.example` documentam apenas os nomes.
 
 O worker nao precisa do verify token. O App Secret e obrigatorio somente na
 API, que recebe o webhook. API e worker aplicam a allowlist separadamente.
+
+O limite padrao de snapshot do Group Manager e 7200 segundos. Ele corresponde
+a duas janelas do intervalo padrao de reconciliacao (1 hora): tolera uma coleta
+perdida, mas bloqueia alteracoes de participacao baseadas em uma visao antiga.
+API e worker devem receber o mesmo valor.
 
 ## Seguranca
 

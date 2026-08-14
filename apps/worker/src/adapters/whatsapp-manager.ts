@@ -1,6 +1,7 @@
 import { createWorkerLogger } from '../logger.js';
 
 const logger = createWorkerLogger();
+const REQUEST_TIMEOUT_MS = 10000;
 
 export interface WmParticipant {
   id: string;
@@ -32,6 +33,8 @@ export interface WmHealthResponse {
   ok: boolean;
   lastSeq: number;
   events: number;
+  connected?: boolean;
+  status?: string;
 }
 
 export interface WmSnapshotGroup {
@@ -65,6 +68,7 @@ export class WhatsAppManagerReadProvider implements WhatsAppManagerProvider {
     const url = `${this.baseUrl}${path}`;
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${this.token}` },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
     if (res.status === 401) {

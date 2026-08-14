@@ -73,6 +73,8 @@ describe('Integration Health API', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.integration).toBe('whatsapp-manager');
+    expect(body.status).toBe('error');
+    expect(body.connected).toBeNull();
     expect(body.lastPolledAt).toBeNull();
     expect(body.cursor).toBeNull();
     expect(body.totalProcessed).toBe(0);
@@ -85,6 +87,10 @@ describe('Integration Health API', () => {
         integration: 'whatsapp-manager',
         cursor: '42',
         lastPolledAt: new Date(),
+        lastSuccessfulSnapshotAt: new Date(),
+        providerSnapshotAt: new Date(),
+        lastCursorAdvanceAt: new Date(Date.now() - 86400000),
+        providerLastSeq: 42,
       },
     });
 
@@ -105,8 +111,111 @@ describe('Integration Health API', () => {
 
     const body = res.json();
     expect(body.cursor).toBe('42');
+    expect(body.status).toBe('healthy');
+    expect(body.cursorStatus).toBe('current');
+    expect(body.snapshotFresh).toBe(true);
     expect(body.totalProcessed).toBe(1);
     expect(body.lastEventType).toBe('entrou');
+  });
+
+  it('reports an explicit provider disconnect separately from API liveness', async () => {
+    await db.integrationCursor.create({
+      data: {
+        integration: 'whatsapp-manager',
+        cursor: '42',
+        lastPolledAt: new Date(),
+        lastSuccessfulSnapshotAt: new Date(),
+        providerSnapshotAt: new Date(),
+        providerLastSeq: 42,
+        providerConnected: false,
+      },
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/integration/health',
+      headers: { cookie: sessionCookie },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      status: 'disconnected',
+      connected: false,
+      connectionSource: 'provider',
+    });
+  });
+
+  it('reports a stale snapshot and does not equate an idle cursor with a stuck cursor', async () => {
+    await db.integrationCursor.create({
+      data: {
+        integration: 'whatsapp-manager',
+        cursor: '42',
+        lastPolledAt: new Date(),
+        lastSuccessfulSnapshotAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+        providerSnapshotAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+        lastCursorAdvanceAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        providerLastSeq: 42,
+      },
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/integration/health',
+      headers: { cookie: sessionCookie },
+    });
+
+    expect(res.json()).toMatchObject({
+      status: 'stale',
+      snapshotFresh: false,
+      cursorStatus: 'current',
+    });
+  });
+
+  it('reports a cursor behind only when provider lastSeq is greater', async () => {
+    await db.integrationCursor.create({
+      data: {
+        integration: 'whatsapp-manager',
+        cursor: '42',
+        lastPolledAt: new Date(),
+        lastSuccessfulSnapshotAt: new Date(),
+        providerSnapshotAt: new Date(),
+        providerLastSeq: 43,
+      },
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/integration/health',
+      headers: { cookie: sessionCookie },
+    });
+
+    expect(res.json()).toMatchObject({ status: 'degraded', cursorStatus: 'behind' });
+  });
+
+  it('returns only a sanitized provider error summary', async () => {
+    await db.integrationCursor.create({
+      data: {
+        integration: 'whatsapp-manager',
+        cursor: '42',
+        lastPolledAt: new Date(),
+        lastSuccessfulSnapshotAt: new Date(),
+        providerSnapshotAt: new Date(),
+        providerLastSeq: 42,
+        consecutiveFailures: 1,
+        lastProviderError: 'token=unsafe https://provider.example/private',
+      },
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/integration/health',
+      headers: { cookie: sessionCookie },
+    });
+    const errorSummary = res.json().lastProviderError as string;
+
+    expect(errorSummary).toContain('[REDACTED]');
+    expect(errorSummary).not.toContain('unsafe');
+    expect(errorSummary).not.toContain('provider.example');
   });
 
   it('returns dead-lettered events in recentErrors', async () => {

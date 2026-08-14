@@ -253,11 +253,19 @@ model GroupEvent {
 // ─── Event Processing ────────────────────────────────────────────────
 
 model IntegrationCursor {
-  id          String   @id @default(uuid())
-  integration String   @unique
-  cursor      String
-  lastPolledAt DateTime @map("last_polled_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id                       String    @id @default(uuid())
+  integration              String    @unique
+  cursor                   String
+  lastPolledAt             DateTime? @map("last_polled_at")
+  lastSuccessfulSnapshotAt DateTime? @map("last_successful_snapshot_at")
+  providerSnapshotAt       DateTime? @map("provider_snapshot_at")
+  lastCursorAdvanceAt      DateTime? @map("last_cursor_advance_at")
+  providerLastSeq          Int?      @map("provider_last_seq")
+  providerConnected        Boolean?  @map("provider_connected")
+  lastProviderError        String?   @map("last_provider_error")
+  lastProviderErrorScope   String?   @map("last_provider_error_scope")
+  consecutiveFailures      Int       @default(0) @map("consecutive_failures")
+  updatedAt                DateTime  @updatedAt @map("updated_at")
 
   @@map("integration_cursors")
 }

@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@meteorico/database';
 import { Prisma } from '@meteorico/database';
+import { groupManagerSnapshotStaleAfterSeconds } from '@meteorico/shared';
 import type { WhatsAppManagerProvider, WmSnapshotGroup } from '../adapters/whatsapp-manager.js';
 import { createWorkerLogger } from '../logger.js';
 import { normalizeAllowedManagerPhone } from '../participant-safety.js';
@@ -12,12 +13,19 @@ export interface ReconciliationResult {
   membershipsRemoved: number;
   contactsCreated: number;
   skippedUnknown: number;
+  skippedStale: number;
+  skippedDisconnected: number;
+  skippedIncomplete: number;
+  groupsSeen: number;
+  oldestSnapshotAt: string | null;
+  providerConnected: boolean | null;
 }
 
 export async function reconcileSnapshots(
   db: PrismaClient,
   provider: WhatsAppManagerProvider,
   groupId?: string,
+  now = new Date(),
 ): Promise<ReconciliationResult> {
   const result: ReconciliationResult = {
     groupsReconciled: 0,
@@ -25,9 +33,31 @@ export async function reconcileSnapshots(
     membershipsRemoved: 0,
     contactsCreated: 0,
     skippedUnknown: 0,
+    skippedStale: 0,
+    skippedDisconnected: 0,
+    skippedIncomplete: 0,
+    groupsSeen: 0,
+    oldestSnapshotAt: null,
+    providerConnected: null,
   };
 
+  const health = await provider.health();
+  result.providerConnected = health.connected ?? null;
+  if (!health.ok || health.connected === false) {
+    result.skippedDisconnected = 1;
+    logger.warn({
+      event: 'reconciliation_skipped',
+      reason: health.connected === false ? 'provider_disconnected' : 'provider_unhealthy',
+    }, 'Snapshot reconciliation skipped');
+    return result;
+  }
+
   const { groups: snapshots } = await provider.snapshots(groupId);
+  result.groupsSeen = snapshots.length;
+  const staleAfterSeconds = groupManagerSnapshotStaleAfterSeconds(
+    process.env.GROUP_MANAGER_SNAPSHOT_STALE_AFTER_SECONDS,
+  );
+  let oldestObservedAt: Date | null = null;
 
   for (const snapshot of snapshots) {
     const group = await db.group.findFirst({
@@ -39,11 +69,50 @@ export async function reconcileSnapshots(
       continue;
     }
 
+    const snapshotAt = parseSnapshotDate(snapshot.updatedAt);
+    const timestampFromFuture = snapshotAt !== null
+      && snapshotAt.getTime() > now.getTime() + 5 * 60 * 1000;
+    if (snapshotAt !== null && !timestampFromFuture) {
+      if (oldestObservedAt === null || snapshotAt < oldestObservedAt) {
+        oldestObservedAt = snapshotAt;
+      }
+    }
+
+    if (
+      snapshotAt === null
+      || timestampFromFuture
+      || now.getTime() - snapshotAt.getTime() > staleAfterSeconds * 1000
+    ) {
+      result.skippedStale++;
+      logger.warn({
+        event: 'snapshot_stale',
+        groupId: snapshot.groupId,
+        snapshotAt: snapshotAt?.toISOString() ?? null,
+        timestampFromFuture,
+        staleAfterSeconds,
+      }, 'Stale snapshot ignored');
+      continue;
+    }
+
+    if (!snapshot.members) {
+      result.skippedIncomplete++;
+      logger.warn({
+        event: 'reconciliation_skipped',
+        groupId: snapshot.groupId,
+        reason: 'members_missing',
+      }, 'Incomplete snapshot ignored');
+      continue;
+    }
+
     await reconcileGroup(db, group, snapshot, result);
     result.groupsReconciled++;
   }
 
-  logger.info(result, 'Snapshot reconciliation complete');
+  if (result.skippedIncomplete === 0) {
+    result.oldestSnapshotAt = oldestObservedAt?.toISOString() ?? null;
+  }
+
+  logger.info({ event: 'snapshot_success', ...result }, 'Snapshot reconciliation complete');
   return result;
 }
 
@@ -53,10 +122,8 @@ async function reconcileGroup(
   snapshot: WmSnapshotGroup,
   result: ReconciliationResult,
 ) {
-  if (!snapshot.members || snapshot.members.length === 0) return;
-
   const snapshotPhones = new Set<string>();
-  for (const member of snapshot.members) {
+  for (const member of snapshot.members ?? []) {
     const phone = normalizeAllowedManagerPhone(member.number);
     if (phone) snapshotPhones.add(phone);
   }
@@ -74,7 +141,7 @@ async function reconcileGroup(
     }
   }
 
-  for (const member of snapshot.members) {
+  for (const member of snapshot.members ?? []) {
     const phone = normalizeAllowedManagerPhone(member.number);
     if (!phone) continue;
     if (activePhones.has(phone)) continue;
@@ -185,6 +252,11 @@ async function reconcileGroup(
     where: { id: group.id },
     data: { currentCount: snapshotPhones.size },
   });
+}
+
+function parseSnapshotDate(value: string): Date | null {
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
 }
 
 function classificationFromCategory(category: string): string {

@@ -1,6 +1,8 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+overrides:
+  'nanoid@<3.3.18': 3.3.18
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true

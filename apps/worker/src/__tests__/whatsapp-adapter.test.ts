@@ -19,7 +19,7 @@ describe('WhatsAppManagerReadProvider', () => {
     expect(result).toEqual(mockResponse);
     expect(fetch).toHaveBeenCalledWith(
       'https://wm.example.com/api/integration/health',
-      { headers: { Authorization: 'Bearer test-token' } },
+      expect.objectContaining({ headers: { Authorization: 'Bearer test-token' } }),
     );
   });
 
@@ -33,7 +33,7 @@ describe('WhatsAppManagerReadProvider', () => {
     expect(result).toEqual(mockResponse);
     expect(fetch).toHaveBeenCalledWith(
       'https://wm.example.com/api/integration/events?since=5&limit=100',
-      { headers: { Authorization: 'Bearer test-token' } },
+      expect.objectContaining({ headers: { Authorization: 'Bearer test-token' } }),
     );
   });
 
@@ -46,7 +46,7 @@ describe('WhatsAppManagerReadProvider', () => {
     await provider.snapshots('group-123');
     expect(fetch).toHaveBeenCalledWith(
       'https://wm.example.com/api/integration/snapshots?groupId=group-123',
-      { headers: { Authorization: 'Bearer test-token' } },
+      expect.objectContaining({ headers: { Authorization: 'Bearer test-token' } }),
     );
   });
 
@@ -58,7 +58,7 @@ describe('WhatsAppManagerReadProvider', () => {
     await provider.snapshots();
     expect(fetch).toHaveBeenCalledWith(
       'https://wm.example.com/api/integration/snapshots',
-      { headers: { Authorization: 'Bearer test-token' } },
+      expect.objectContaining({ headers: { Authorization: 'Bearer test-token' } }),
     );
   });
 

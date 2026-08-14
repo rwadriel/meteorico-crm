@@ -5,8 +5,26 @@ const API = import.meta.env.VITE_API_URL ?? '';
 
 interface HealthStatus {
   integration: string;
+  status: 'healthy' | 'degraded' | 'disconnected' | 'stale' | 'error';
+  connected: boolean | null;
+  connectionSource: 'provider' | 'inferred' | 'unknown';
+  snapshotFresh: boolean;
+  pollFresh: boolean;
+  snapshotAgeSeconds: number | null;
+  pollAgeSeconds: number | null;
+  cursorStatus: 'current' | 'behind' | 'stale' | 'unknown';
+  reasons: string[];
   lastPolledAt: string | null;
+  lastSuccessfulPollAt: string | null;
+  lastSuccessfulSnapshotAt: string | null;
+  providerSnapshotAt: string | null;
+  lastSuccessfulEventAt: string | null;
+  lastCursorAdvanceAt: string | null;
   cursor: string | null;
+  providerLastSeq: number | null;
+  consecutiveFailures: number;
+  lastProviderError: string | null;
+  lastProviderErrorScope: string | null;
   lastEventProcessedAt: string | null;
   lastEventType: string | null;
   totalProcessed: number;
@@ -20,6 +38,21 @@ interface HealthStatus {
     [key: string]: unknown;
   }>;
 }
+
+const STATUS_LABELS: Record<HealthStatus['status'], string> = {
+  healthy: 'Saudavel',
+  degraded: 'Degradado',
+  disconnected: 'Desconectado',
+  stale: 'Snapshot obsoleto',
+  error: 'Erro',
+};
+
+const CURSOR_LABELS: Record<HealthStatus['cursorStatus'], string> = {
+  current: 'Atual',
+  behind: 'Atrasado',
+  stale: 'Sem consulta recente',
+  unknown: 'Indeterminado',
+};
 
 interface OrphanGroup {
   id: string;
@@ -38,6 +71,14 @@ function formatRelative(dateStr: string | null): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h atras`;
   return `${Math.floor(hours / 24)}d atras`;
+}
+
+function formatAge(seconds: number | null): string {
+  if (seconds === null) return 'Nunca';
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}min`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+  return `${Math.floor(seconds / 86400)}d`;
 }
 
 export function IntegrationsPage() {
@@ -81,6 +122,16 @@ export function IntegrationsPage() {
     : delayMs < 300000 ? 'warning' as const
     : 'danger' as const;
 
+  const statusVariant = health?.status === 'healthy' ? 'success' as const
+    : health?.status === 'degraded' ? 'warning' as const
+    : 'danger' as const;
+  const statusAlertVariant = health?.status === 'healthy' ? 'success' as const
+    : health?.status === 'degraded' ? 'warning' as const
+    : 'danger' as const;
+  const connectedLabel = health?.connected === true
+    ? 'Sim'
+    : health?.connected === false ? 'Nao' : 'Indeterminado';
+
   const errorColumns = [
     { key: 'eventId', header: 'Event ID', render: (e: HealthStatus['recentErrors'][0]) => e.eventId.slice(0, 12) },
     { key: 'eventType', header: 'Tipo' },
@@ -112,7 +163,24 @@ export function IntegrationsPage() {
 
       {health && (
         <>
+          <Alert variant={statusAlertVariant}>
+            <strong>Group Manager: {STATUS_LABELS[health.status]}</strong>
+            {' — '}conexao: {connectedLabel}; snapshot: {health.snapshotFresh ? 'atual' : 'obsoleto'};
+            cursor: {CURSOR_LABELS[health.cursorStatus]}.
+            {health.lastProviderError && (
+              <div style={{ marginTop: '0.35rem' }}>
+                Ultimo erro do provedor: {health.lastProviderError}
+              </div>
+            )}
+          </Alert>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div className="card" style={{ padding: '1.25rem' }}>
+              <div style={{ fontSize: '0.8rem', opacity: 0.7, marginBottom: '0.25rem' }}>Saude da integracao</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>
+                <Badge variant={statusVariant}>{STATUS_LABELS[health.status]}</Badge>
+              </div>
+            </div>
             <div className="card" style={{ padding: '1.25rem' }}>
               <div style={{ fontSize: '0.8rem', opacity: 0.7, marginBottom: '0.25rem' }}>Ultima consulta</div>
               <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>
@@ -120,8 +188,26 @@ export function IntegrationsPage() {
               </div>
             </div>
             <div className="card" style={{ padding: '1.25rem' }}>
+              <div style={{ fontSize: '0.8rem', opacity: 0.7, marginBottom: '0.25rem' }}>Ultimo snapshot</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 600 }}>
+                <Badge variant={health.snapshotFresh ? 'success' : 'danger'}>
+                  {formatAge(health.snapshotAgeSeconds)}
+                </Badge>
+              </div>
+              <div style={{ opacity: 0.6, fontSize: '0.8rem', marginTop: '0.3rem' }}>
+                Fonte: {formatRelative(health.providerSnapshotAt)}
+              </div>
+              <div style={{ opacity: 0.6, fontSize: '0.8rem' }}>
+                Ultima reconciliacao valida: {formatRelative(health.lastSuccessfulSnapshotAt)}
+              </div>
+            </div>
+            <div className="card" style={{ padding: '1.25rem' }}>
               <div style={{ fontSize: '0.8rem', opacity: 0.7, marginBottom: '0.25rem' }}>Cursor</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>{health.cursor ?? '0'}</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>{health.cursor ?? '-'}</div>
+              <div style={{ opacity: 0.6, fontSize: '0.8rem' }}>
+                {CURSOR_LABELS[health.cursorStatus]}
+                {health.providerLastSeq !== null ? ` / provedor ${health.providerLastSeq}` : ''}
+              </div>
             </div>
             <div className="card" style={{ padding: '1.25rem' }}>
               <div style={{ fontSize: '0.8rem', opacity: 0.7, marginBottom: '0.25rem' }}>Processados</div>

@@ -33,51 +33,54 @@ para saber quando contatos entram ou saem de grupos.
 
 ### Endpoints disponiveis
 
-#### GET /health
+#### GET /api/integration/health
 
-Verifica se o servico esta disponivel.
+Verifica o contrato de leitura da integracao. O contrato atualmente publicado
+pelo Group Manager nao inclui um sinal de sessao conectada; `connected` e
+aceito de forma opcional para compatibilidade futura.
 
 ```
 Response 200:
 {
-  "status": "ok",
-  "uptime": 123456,
-  "version": "1.0.0"
+  "ok": true,
+  "lastSeq": 3432,
+  "events": 3432
 }
 ```
 
-#### GET /events
+#### GET /api/integration/events
 
 Retorna eventos de grupo desde o cursor informado.
 
 ```
 Query params:
-  cursor: string (opcional) - Cursor para paginacao
-  limit: number (opcional) - Limite de eventos (default: 100)
+  since: number - Ultimo sequence number consumido
+  limit: number (opcional) - Limite de eventos (default no CRM: 2000)
 
 Response 200:
 {
   "events": [
     {
-      "id": "evt_abc123",
-      "type": "group_join",
-      "group_id": "grp_123",
-      "phone": "5511999999999",
-      "timestamp": "2024-01-01T12:00:00Z",
-      "metadata": {}
+      "seq": 3432,
+      "event_id": "evt_abc123",
+      "ts": "2026-08-14T12:00:00Z",
+      "event": "entrou",
+      "groupId": "grp_123",
+      "groupName": "Grupo",
+      "participants": []
     }
   ],
-  "next_cursor": "cursor_xyz",
-  "has_more": true
+  "nextSince": 3432,
+  "hasMore": false,
+  "lastSeq": 3432
 }
 ```
 
-Tipos de evento:
-- `group_join` - Contato entrou no grupo
-- `group_leave` - Contato saiu do grupo
-- `group_removed` - Contato foi removido do grupo
+Eventos incrementais de participacao confiaveis sao `entrou`, `adicionado`,
+`saiu` e `removido`. `baseline`, `grupo_criado` e `alteracao` sao registrados
+como ignorados e nao alteram participacao.
 
-#### GET /snapshots
+#### GET /api/integration/snapshots
 
 Retorna o estado atual de todos os grupos monitorados.
 
@@ -86,11 +89,11 @@ Response 200:
 {
   "groups": [
     {
-      "id": "grp_123",
-      "name": "Grupo Lancamento 01",
-      "members": ["5511999999999", "5511888888888"],
-      "member_count": 2,
-      "snapshot_at": "2024-01-01T12:00:00Z"
+      "groupId": "grp_123",
+      "groupName": "Grupo Lancamento 01",
+      "memberCount": 2,
+      "updatedAt": "2026-08-14T12:00:00Z",
+      "members": []
     }
   ]
 }
@@ -110,21 +113,60 @@ O kit inclui:
 ```
 Worker (polling loop):
   1. Ler cursor atual de integration_cursors
-  2. GET /events?cursor={cursor}&limit=100
-  3. Para cada evento:
+  2. GET /api/integration/health
+  3. GET /api/integration/events?since={cursor}&limit=2000
+  4. Registrar o poll bem-sucedido mesmo quando nao ha eventos
+  5. Para cada evento:
      a. Verificar se ja foi processado (processed_events)
      b. Se novo: processar e registrar em processed_events
-  4. Atualizar cursor em integration_cursors
-  5. Se has_more: repetir imediatamente
-  6. Se nao has_more: aguardar intervalo (configuravel, default 30s)
+  6. Atualizar o cursor somente depois do processamento
+  7. Se hasMore: repetir imediatamente
+  8. Se nao hasMore: aguardar o intervalo (default 10s)
 ```
+
+### Modelo de saude e seguranca de snapshot
+
+O endpoint administrativo `GET /api/integration/health` separa a saude da
+integracao da liveness do worker. Seus estados sao:
+
+- `healthy`: poll e snapshot recentes e cursor no `lastSeq` do provedor.
+- `degraded`: falha transitoria ou cursor realmente atras do `lastSeq`.
+- `disconnected`: somente quando o provedor informa explicitamente
+  `connected: false`.
+- `stale`: poll ou snapshot ultrapassou o limite configurado.
+- `error`: configuracao ausente ou falhas consecutivas.
+
+Quando o provedor omite `connected`, o CRM mostra a origem como `inferred`
+apenas se poll e snapshot estiverem recentes; caso contrario, a conexao fica
+indeterminada. Um cursor antigo nao e considerado travado se `cursor` e
+`providerLastSeq` continuam iguais, pois a ausencia de eventos e normal.
+
+Snapshots com `updatedAt` invalido, implausivelmente no futuro ou mais antigos que
+`GROUP_MANAGER_SNAPSHOT_STALE_AFTER_SECONDS` sao ignorados por inteiro. Eles
+nao criam contato/participacao, nao marcam saida e nao atualizam a contagem do
+grupo. A ausencia de `members` tambem e tratada como payload incompleto. Eventos
+incrementais idempotentes continuam sendo consumidos normalmente.
+Para o indicador global, o CRM usa o snapshot mais antigo entre os grupos que
+ele conhece; um grupo atualizado nao mascara outro grupo obsoleto.
+`providerSnapshotAt` guarda essa evidencia de origem e determina a idade.
+`lastSuccessfulSnapshotAt` so avanca quando uma reconciliacao valida e recente
+termina; erro ou snapshot stale nao o sobrescreve como se fosse sucesso.
+
+O Group Manager atual nao oferece endpoint oficial de reconexao. O CRM nao
+tenta controlar a sessao nem inventa um reconnect; a reconexao permanece na UI
+oficial do proprio Manager.
 
 ### Tratamento de erros
 
-- **Timeout**: 10 segundos. Retry com backoff exponencial.
-- **429 Rate Limit**: Respeitar Retry-After header.
-- **5xx**: Retry com backoff. Alerta apos 5 falhas consecutivas.
-- **Dados invalidos**: Registrar evento com erro, nao bloquear fila.
+- Falhas do provider sao persistidas como resumo sanitizado e contador
+  consecutivo; credenciais e URLs nao sao expostas.
+- O poll seguinte funciona como retry no intervalo configurado. Nao existe
+  endpoint oficial de reconnect para acionar com backoff.
+- Cada request ao Manager tem timeout de 10 segundos e ciclos sobrepostos sao
+  ignorados, evitando acumulo de chamadas durante uma indisponibilidade.
+- Dados invalidos sao isolados sem bloquear o worker.
+- Logs estruturados usam `poll_success`, `snapshot_success`, `snapshot_stale`,
+  `provider_error`, `reconciliation_skipped` e `integration_health_transition`.
 
 ## 2. Meta WhatsApp Cloud API
 
