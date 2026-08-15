@@ -4,11 +4,14 @@ import { groupManagerSnapshotStaleAfterSeconds } from '@meteorico/shared';
 import type { WhatsAppManagerProvider, WmSnapshotGroup } from '../adapters/whatsapp-manager.js';
 import { createWorkerLogger } from '../logger.js';
 import { normalizeAllowedManagerPhone } from '../participant-safety.js';
+import { assertProviderSourceId } from '../source-aware-cursor.js';
 import { lockGroupMemberships } from './membership-lock.js';
 
 const logger = createWorkerLogger();
 
 export interface ReconciliationResult {
+  sourceId: string | null;
+  providerLastSeq: number | null;
   groupsReconciled: number;
   membershipsAdded: number;
   membershipsRemoved: number;
@@ -29,6 +32,8 @@ export async function reconcileSnapshots(
   now = new Date(),
 ): Promise<ReconciliationResult> {
   const result: ReconciliationResult = {
+    sourceId: null,
+    providerLastSeq: null,
     groupsReconciled: 0,
     membershipsAdded: 0,
     membershipsRemoved: 0,
@@ -43,6 +48,9 @@ export async function reconcileSnapshots(
   };
 
   const health = await provider.health();
+  const sourceId = assertProviderSourceId(health.sourceId);
+  result.sourceId = sourceId;
+  result.providerLastSeq = health.lastSeq;
   result.providerConnected = health.connected ?? null;
   if (!health.ok || health.connected === false) {
     result.skippedDisconnected = 1;
@@ -53,7 +61,9 @@ export async function reconcileSnapshots(
     return result;
   }
 
-  const { groups: snapshots } = await provider.snapshots(groupId);
+  const snapshotResponse = await provider.snapshots(groupId);
+  assertSameProviderSource(sourceId, snapshotResponse.sourceId);
+  const { groups: snapshots } = snapshotResponse;
   result.groupsSeen = snapshots.length;
   const staleAfterSeconds = groupManagerSnapshotStaleAfterSeconds(
     process.env.GROUP_MANAGER_SNAPSHOT_STALE_AFTER_SECONDS,
@@ -92,6 +102,7 @@ export async function reconcileSnapshots(
     let snapshot = snapshotSummary;
     if (!snapshot.members) {
       const detail = await provider.snapshots(snapshot.groupId);
+      assertSameProviderSource(sourceId, detail.sourceId);
       snapshot = detail.groups.find((candidate) => candidate.groupId === snapshot.groupId)
         ?? snapshot;
 
@@ -138,6 +149,13 @@ export async function reconcileSnapshots(
 
   logger.info({ event: 'snapshot_success', ...result }, 'Snapshot reconciliation complete');
   return result;
+}
+
+function assertSameProviderSource(expected: string, observed: unknown): void {
+  const actual = assertProviderSourceId(observed);
+  if (actual !== expected) {
+    throw new Error('WhatsApp Manager: source identity changed during snapshot');
+  }
 }
 
 async function reconcileGroup(

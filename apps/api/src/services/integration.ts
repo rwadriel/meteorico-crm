@@ -9,6 +9,8 @@ import {
 
 export interface IntegrationHealthStatus {
   integration: string;
+  sourceIdentity: string | null;
+  baselineEstablished: boolean;
   status: GroupManagerHealthStatus;
   connected: boolean | null;
   connectionSource: GroupManagerConnectionSource;
@@ -46,18 +48,31 @@ export async function getIntegrationHealth(
   db: PrismaClient,
   integration: string,
 ): Promise<IntegrationHealthStatus> {
-  const cursor = await db.integrationCursor.findUnique({
-    where: { integration },
+  const cursor = await db.integrationCursor.findFirst({
+    where: {
+      OR: [
+        { integration },
+        { integration: { startsWith: `${integration}:` } },
+      ],
+    },
+    orderBy: { updatedAt: 'desc' },
   });
+  const activeEventSource = cursor?.integration ?? integration;
+  const sourceAware = cursor?.integration.startsWith(`${integration}:`) ?? false;
+  const baselineRequired = cursor?.lastProviderError === 'provider_source_baseline_required'
+    || (sourceAware && (
+      cursor?.lastPolledAt === null
+      || cursor?.lastSuccessfulSnapshotAt === null
+    ));
 
   const lastEvent = await db.processedEvent.findFirst({
-    where: { eventSource: integration },
+    where: { eventSource: activeEventSource },
     orderBy: { processedAt: 'desc' },
   });
 
   const lastSuccessfulEvent = await db.processedEvent.findFirst({
     where: {
-      eventSource: integration,
+      eventSource: activeEventSource,
       result: { startsWith: 'processed:' },
     },
     orderBy: { processedAt: 'desc' },
@@ -65,28 +80,28 @@ export async function getIntegrationHealth(
 
   const totalProcessed = await db.processedEvent.count({
     where: {
-      eventSource: integration,
+      eventSource: activeEventSource,
       result: { startsWith: 'processed:' },
     },
   });
 
   const totalDeadLettered = await db.processedEvent.count({
     where: {
-      eventSource: integration,
+      eventSource: activeEventSource,
       result: { startsWith: 'dead-letter:' },
     },
   });
 
   const totalSkipped = await db.processedEvent.count({
     where: {
-      eventSource: integration,
+      eventSource: activeEventSource,
       result: { startsWith: 'skipped:' },
     },
   });
 
   const recentErrors = await db.processedEvent.findMany({
     where: {
-      eventSource: integration,
+      eventSource: activeEventSource,
       result: { startsWith: 'dead-letter:' },
     },
     orderBy: { processedAt: 'desc' },
@@ -114,6 +129,7 @@ export async function getIntegrationHealth(
     providerLastSeq: cursor?.providerLastSeq ?? null,
     consecutiveFailures: cursor?.consecutiveFailures ?? 0,
     lastProviderError: cursor?.lastProviderError ?? null,
+    baselineRequired,
     snapshotStaleAfterSeconds: groupManagerSnapshotStaleAfterSeconds(
       process.env.GROUP_MANAGER_SNAPSHOT_STALE_AFTER_SECONDS,
     ),
@@ -122,6 +138,11 @@ export async function getIntegrationHealth(
 
   return {
     integration,
+    sourceIdentity: sourceIdentityFromIntegration(cursor?.integration ?? null, integration),
+    baselineEstablished: cursor !== null
+      && cursor.lastPolledAt !== null
+      && cursor.lastSuccessfulSnapshotAt !== null
+      && !baselineRequired,
     status: model.status,
     connected: model.connected,
     connectionSource: model.connectionSource,
@@ -154,6 +175,17 @@ export async function getIntegrationHealth(
       processedAt: e.processedAt.toISOString(),
     })),
   };
+}
+
+function sourceIdentityFromIntegration(
+  cursorIntegration: string | null,
+  baseIntegration: string,
+): string | null {
+  if (!cursorIntegration) return null;
+  const prefix = `${baseIntegration}:`;
+  return cursorIntegration.startsWith(prefix)
+    ? cursorIntegration.slice(prefix.length)
+    : null;
 }
 
 function positiveNumber(value: string | undefined, fallback: number): number {

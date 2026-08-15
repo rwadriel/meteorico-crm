@@ -20,11 +20,12 @@ export interface ProcessResult {
 export async function processEvent(
   db: PrismaClient,
   event: WmEvent,
+  eventSource = 'whatsapp-manager',
 ): Promise<{ success: boolean; error?: string }> {
   const alreadyProcessed = await db.processedEvent.findUnique({
     where: {
       eventSource_externalEventId: {
-        eventSource: 'whatsapp-manager',
+        eventSource,
         externalEventId: event.event_id,
       },
     },
@@ -42,7 +43,7 @@ export async function processEvent(
   if (!group) {
     await db.processedEvent.createMany({
       data: [{
-        eventSource: 'whatsapp-manager',
+        eventSource,
         externalEventId: event.event_id,
         eventType: event.event,
         result: 'dead-letter:unknown-group',
@@ -55,7 +56,7 @@ export async function processEvent(
   if (!ENTER_EVENTS.has(event.event) && !LEAVE_EVENTS.has(event.event)) {
     await db.processedEvent.createMany({
       data: [{
-        eventSource: 'whatsapp-manager',
+        eventSource,
         externalEventId: event.event_id,
         eventType: event.event,
         result: 'skipped:non-membership-event',
@@ -74,7 +75,7 @@ export async function processEvent(
     const claimedByAnotherWorker = await tx.processedEvent.findUnique({
       where: {
         eventSource_externalEventId: {
-          eventSource: 'whatsapp-manager',
+          eventSource,
           externalEventId: event.event_id,
         },
       },
@@ -115,7 +116,7 @@ export async function processEvent(
 
     await (tx as unknown as PrismaClient).processedEvent.create({
       data: {
-        eventSource: 'whatsapp-manager',
+        eventSource,
         externalEventId: event.event_id,
         eventType: event.event,
         result: `processed:${participantsProcessed}-participants`,
@@ -333,12 +334,13 @@ function jsonObject(value: Prisma.JsonValue | null): Record<string, Prisma.JsonV
 export async function processEventBatch(
   db: PrismaClient,
   events: WmEvent[],
+  eventSource = 'whatsapp-manager',
 ): Promise<ProcessResult> {
   const result: ProcessResult = { processed: 0, skipped: 0, failed: 0, deadLettered: 0 };
 
   for (const event of events) {
     try {
-      const r = await processEvent(db, event);
+      const r = await processEvent(db, event, eventSource);
       if (r.success) {
         result.processed++;
       } else {
@@ -352,12 +354,12 @@ export async function processEventBatch(
         await db.processedEvent.upsert({
           where: {
             eventSource_externalEventId: {
-              eventSource: 'whatsapp-manager',
+              eventSource,
               externalEventId: event.event_id,
             },
           },
           create: {
-            eventSource: 'whatsapp-manager',
+            eventSource,
             externalEventId: event.event_id,
             eventType: event.event,
             result: `dead-letter:${message.slice(0, 200)}`,

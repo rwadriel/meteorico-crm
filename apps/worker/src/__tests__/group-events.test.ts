@@ -3,8 +3,10 @@ import { PrismaClient } from '@meteorico/database';
 import { processEvent, processEventBatch } from '../processors/group-events.js';
 import { reconcileSnapshots } from '../processors/snapshot-reconciliation.js';
 import type { WhatsAppManagerProvider, WmEvent } from '../adapters/whatsapp-manager.js';
+import { providerIntegrationKey } from '../source-aware-cursor.js';
 
 const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgresql://meteorico:meteorico_dev@localhost:5432/meteorico_crm_test';
+const SOURCE_ID = 'wm-stream-11111111-1111-4111-8111-111111111111';
 
 function makeEvent(overrides: Partial<WmEvent> = {}): WmEvent {
   return {
@@ -30,13 +32,15 @@ function makeSnapshotProvider(options: {
 } = {}): WhatsAppManagerProvider {
   return {
     health: async () => ({
+      sourceId: SOURCE_ID,
       ok: true,
       lastSeq: 0,
       events: 0,
       ...(options.connected === undefined ? {} : { connected: options.connected }),
     }),
-    events: async () => ({ events: [], nextSince: 0, hasMore: false, lastSeq: 0 }),
+    events: async () => ({ sourceId: SOURCE_ID, events: [], nextSince: 0, hasMore: false, lastSeq: 0 }),
     snapshots: async () => ({
+      sourceId: SOURCE_ID,
       groups: [{
         groupId: 'wid-group-1',
         groupName: 'Grupo Teste',
@@ -183,10 +187,11 @@ describe('Group Events Processor', () => {
     expect(updatedContact!.totalParticipations).toBe(1);
   });
 
-  it('skips duplicate events (idempotency)', async () => {
+  it('G. keeps a duplicate event idempotent after the source baseline', async () => {
     const event = makeEvent({ event_id: 'dup-1' });
-    await processEvent(db, event);
-    await processEvent(db, event);
+    const eventSource = providerIntegrationKey(SOURCE_ID);
+    await processEvent(db, event, eventSource);
+    await processEvent(db, event, eventSource);
 
     const processed = await db.processedEvent.findMany({
       where: { externalEventId: 'dup-1' },
@@ -410,9 +415,10 @@ describe('Group Events Processor', () => {
     process.env.DEPLOYMENT_ENV = 'staging';
     process.env.WHATSAPP_STAGING_ALLOWLIST = '5591999990001';
     const provider: WhatsAppManagerProvider = {
-      health: async () => ({ ok: true, lastSeq: 0, events: 0 }),
-      events: async () => ({ events: [], nextSince: 0, hasMore: false, lastSeq: 0 }),
+      health: async () => ({ sourceId: SOURCE_ID, ok: true, lastSeq: 0, events: 0 }),
+      events: async () => ({ sourceId: SOURCE_ID, events: [], nextSince: 0, hasMore: false, lastSeq: 0 }),
       snapshots: async () => ({
+        sourceId: SOURCE_ID,
         groups: [{
           groupId: 'wid-group-1',
           groupName: 'Grupo Teste',
@@ -453,6 +459,7 @@ describe('Group Events Processor', () => {
       requestedGroupIds.push(requestedGroupId);
       if (requestedGroupId === 'wid-group-1') {
         return {
+          sourceId: SOURCE_ID,
           groups: [{
             groupId: 'wid-group-1',
             groupName: 'Grupo Teste',
@@ -468,6 +475,7 @@ describe('Group Events Processor', () => {
       }
 
       return {
+        sourceId: SOURCE_ID,
         groups: [
           {
             groupId: 'wid-group-1',
@@ -502,7 +510,7 @@ describe('Group Events Processor', () => {
     expect(await db.campaignParticipation.count({ where: { campaignId } })).toBe(1);
   });
 
-  it('never removes a real membership from a stale snapshot absence', async () => {
+  it('I. never performs destructive reconciliation from a stale snapshot', async () => {
     await processEvent(db, makeEvent({ event_id: 'fresh-event-before-stale' }));
     const staleAt = new Date('2026-08-01T00:00:00.000Z');
 
@@ -553,6 +561,7 @@ describe('Group Events Processor', () => {
     });
     const provider = makeSnapshotProvider();
     provider.snapshots = async () => ({
+      sourceId: SOURCE_ID,
       groups: [
         {
           groupId: 'wid-group-1',
@@ -589,7 +598,7 @@ describe('Group Events Processor', () => {
     const provider = makeSnapshotProvider({ connected: false });
     provider.snapshots = async () => {
       snapshotsRequested++;
-      return { groups: [] };
+      return { sourceId: SOURCE_ID, groups: [] };
     };
 
     const result = await reconcileSnapshots(db, provider);
@@ -660,7 +669,7 @@ describe('Group Events Processor', () => {
     expect(await db.contact.count()).toBe(0);
   });
 
-  it('keeps fresh snapshot reconciliation idempotent', async () => {
+  it('H. keeps one existing CampaignParticipation after repeated fresh snapshots', async () => {
     const now = new Date('2026-08-14T12:00:00.000Z');
     const provider = makeSnapshotProvider({
       updatedAt: '2026-08-14T11:59:00.000Z',

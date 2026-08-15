@@ -19,6 +19,7 @@ export interface GroupManagerHealthInput {
   providerLastSeq: number | null;
   consecutiveFailures: number;
   lastProviderError: string | null;
+  baselineRequired?: boolean;
   snapshotStaleAfterSeconds?: number;
   pollStaleAfterSeconds: number;
   now?: Date;
@@ -80,6 +81,9 @@ export function calculateGroupManagerHealth(
   } else if (input.providerConnected === false) {
     status = 'disconnected';
     reasons.push('provider_disconnected');
+  } else if (input.baselineRequired) {
+    status = 'degraded';
+    reasons.push('baseline_required');
   } else if (input.consecutiveFailures >= 3) {
     status = 'error';
     reasons.push('repeated_provider_failures');

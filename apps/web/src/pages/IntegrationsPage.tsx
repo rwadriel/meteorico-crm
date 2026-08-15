@@ -5,6 +5,8 @@ const API = import.meta.env.VITE_API_URL ?? '';
 
 interface HealthStatus {
   integration: string;
+  sourceIdentity: string | null;
+  baselineEstablished: boolean;
   status: 'healthy' | 'degraded' | 'disconnected' | 'stale' | 'error';
   connected: boolean | null;
   connectionSource: 'provider' | 'inferred' | 'unknown';
@@ -172,6 +174,11 @@ export function IntegrationsPage() {
                 Ultimo erro do provedor: {health.lastProviderError}
               </div>
             )}
+            {!health.baselineEstablished && (
+              <div style={{ marginTop: '0.35rem' }}>
+                Baseline da origem atual ainda nao estabelecido; consumo incremental bloqueado.
+              </div>
+            )}
           </Alert>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
@@ -207,6 +214,11 @@ export function IntegrationsPage() {
               <div style={{ opacity: 0.6, fontSize: '0.8rem' }}>
                 {CURSOR_LABELS[health.cursorStatus]}
                 {health.providerLastSeq !== null ? ` / provedor ${health.providerLastSeq}` : ''}
+              </div>
+              <div style={{ opacity: 0.6, fontSize: '0.8rem' }}>
+                Origem: {health.sourceIdentity
+                  ? `...${health.sourceIdentity.slice(-8)}`
+                  : 'legada/nao identificada'}; baseline: {health.baselineEstablished ? 'OK' : 'pendente'}
               </div>
             </div>
             <div className="card" style={{ padding: '1.25rem' }}>

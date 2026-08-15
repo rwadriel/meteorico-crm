@@ -192,6 +192,44 @@ describe('Integration Health API', () => {
     expect(res.json()).toMatchObject({ status: 'degraded', cursorStatus: 'behind' });
   });
 
+  it('J. exposes a new provider source as degraded until its baseline exists', async () => {
+    await db.integrationCursor.create({
+      data: {
+        integration: 'whatsapp-manager',
+        cursor: '3497',
+        lastPolledAt: new Date('2026-08-14T12:00:00.000Z'),
+        providerLastSeq: 3497,
+      },
+    });
+    const sourceIdentity = 'wm-stream-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    await db.integrationCursor.create({
+      data: {
+        integration: `whatsapp-manager:${sourceIdentity}`,
+        cursor: '0',
+        providerLastSeq: 54,
+        providerConnected: true,
+        lastProviderError: 'provider_source_baseline_required',
+        lastProviderErrorScope: 'poll',
+        consecutiveFailures: 1,
+      },
+    });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/integration/health',
+      headers: { cookie: sessionCookie },
+    });
+
+    expect(res.json()).toMatchObject({
+      status: 'degraded',
+      reasons: ['baseline_required'],
+      sourceIdentity,
+      baselineEstablished: false,
+      cursor: '0',
+      providerLastSeq: 54,
+    });
+  });
+
   it('returns only a sanitized provider error summary', async () => {
     await db.integrationCursor.create({
       data: {

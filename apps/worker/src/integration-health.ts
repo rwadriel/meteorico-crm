@@ -1,9 +1,14 @@
 import type { PrismaClient } from '@meteorico/database';
+import {
+  GROUP_MANAGER_INTEGRATION,
+  PROVIDER_BASELINE_REQUIRED,
+  providerIntegrationKey,
+} from './source-aware-cursor.js';
 
-const INTEGRATION = 'whatsapp-manager';
 const MAX_ERROR_LENGTH = 240;
 
 interface ProviderObservation {
+  integration?: string;
   cursor: number;
   providerLastSeq: number;
   providerConnected?: boolean;
@@ -15,8 +20,9 @@ export async function recordSuccessfulPoll(
   observation: ProviderObservation,
 ): Promise<{ cursorAdvanced: boolean; recovered: boolean }> {
   const observedAt = observation.observedAt ?? new Date();
+  const integration = observation.integration ?? GROUP_MANAGER_INTEGRATION;
   const current = await db.integrationCursor.findUnique({
-    where: { integration: INTEGRATION },
+    where: { integration },
   });
   const cursor = String(observation.cursor);
   const cursorAdvanced = current?.cursor !== cursor;
@@ -27,9 +33,9 @@ export async function recordSuccessfulPoll(
   );
 
   await db.integrationCursor.upsert({
-    where: { integration: INTEGRATION },
+    where: { integration },
     create: {
-      integration: INTEGRATION,
+      integration,
       cursor,
       lastPolledAt: observedAt,
       lastCursorAdvanceAt: observedAt,
@@ -56,19 +62,21 @@ export async function recordSuccessfulPoll(
 export async function recordSnapshotObservation(
   db: PrismaClient,
   observation: {
+    integration?: string;
     providerSnapshotAt: Date | null;
     successfulAt?: Date;
     providerConnected?: boolean;
   },
 ): Promise<{ recovered: boolean }> {
+  const integration = observation.integration ?? GROUP_MANAGER_INTEGRATION;
   const current = await db.integrationCursor.findUnique({
-    where: { integration: INTEGRATION },
+    where: { integration },
   });
   const snapshotRecovered = observation.successfulAt !== undefined
     && current?.lastProviderErrorScope === 'snapshot';
 
   await db.integrationCursor.updateMany({
-    where: { integration: INTEGRATION },
+    where: { integration },
     data: {
       providerSnapshotAt: observation.providerSnapshotAt,
       ...(observation.successfulAt === undefined
@@ -92,26 +100,30 @@ export async function recordProviderFailure(
   db: PrismaClient,
   error: unknown,
   options: {
+    integration?: string;
     providerConnected?: boolean;
+    providerLastSeq?: number;
     scope?: 'poll' | 'snapshot';
   } = {},
 ): Promise<string> {
   const message = sanitizeProviderError(error);
+  const integration = options.integration ?? GROUP_MANAGER_INTEGRATION;
   const scope = options.scope ?? 'poll';
   const current = await db.integrationCursor.findUnique({
-    where: { integration: INTEGRATION },
+    where: { integration },
   });
   const sameFailureScope = current?.lastProviderErrorScope === scope;
 
   await db.integrationCursor.upsert({
-    where: { integration: INTEGRATION },
+    where: { integration },
     create: {
-      integration: INTEGRATION,
+      integration,
       cursor: '0',
       lastProviderError: message,
       lastProviderErrorScope: scope,
       consecutiveFailures: 1,
       providerConnected: options.providerConnected ?? null,
+      providerLastSeq: options.providerLastSeq ?? null,
     },
     update: {
       lastProviderError: message,
@@ -120,10 +132,76 @@ export async function recordProviderFailure(
       ...(options.providerConnected === undefined
         ? {}
         : { providerConnected: options.providerConnected }),
+      ...(options.providerLastSeq === undefined
+        ? {}
+        : { providerLastSeq: options.providerLastSeq }),
     },
   });
 
   return message;
+}
+
+export async function markProviderBaselineRequired(
+  db: PrismaClient,
+  observation: {
+    sourceId: string;
+    providerLastSeq: number;
+    providerConnected?: boolean;
+  },
+): Promise<string> {
+  return recordProviderFailure(
+    db,
+    new Error(PROVIDER_BASELINE_REQUIRED),
+    {
+      integration: providerIntegrationKey(observation.sourceId),
+      providerConnected: observation.providerConnected,
+      providerLastSeq: observation.providerLastSeq,
+      scope: 'poll',
+    },
+  );
+}
+
+export async function establishProviderBaseline(
+  db: PrismaClient,
+  observation: {
+    sourceId: string;
+    cursor: number;
+    providerSnapshotAt: Date;
+    providerConnected?: boolean;
+    observedAt?: Date;
+  },
+): Promise<{ integration: string; created: boolean }> {
+  const integration = providerIntegrationKey(observation.sourceId);
+  const observedAt = observation.observedAt ?? new Date();
+  const current = await db.integrationCursor.findUnique({ where: { integration } });
+
+  await db.integrationCursor.upsert({
+    where: { integration },
+    create: {
+      integration,
+      cursor: String(observation.cursor),
+      lastPolledAt: observedAt,
+      lastSuccessfulSnapshotAt: observedAt,
+      providerSnapshotAt: observation.providerSnapshotAt,
+      lastCursorAdvanceAt: observedAt,
+      providerLastSeq: observation.cursor,
+      providerConnected: observation.providerConnected ?? null,
+    },
+    update: {
+      cursor: String(observation.cursor),
+      lastPolledAt: observedAt,
+      lastSuccessfulSnapshotAt: observedAt,
+      providerSnapshotAt: observation.providerSnapshotAt,
+      lastCursorAdvanceAt: observedAt,
+      providerLastSeq: observation.cursor,
+      providerConnected: observation.providerConnected ?? null,
+      lastProviderError: null,
+      lastProviderErrorScope: null,
+      consecutiveFailures: 0,
+    },
+  });
+
+  return { integration, created: current === null };
 }
 
 export function sanitizeProviderError(error: unknown): string {

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { WhatsAppManagerReadProvider } from '../adapters/whatsapp-manager.js';
 
+const SOURCE_ID = 'wm-stream-11111111-1111-4111-8111-111111111111';
+
 describe('WhatsAppManagerReadProvider', () => {
   let provider: WhatsAppManagerReadProvider;
 
@@ -10,7 +12,7 @@ describe('WhatsAppManagerReadProvider', () => {
   });
 
   it('calls health endpoint', async () => {
-    const mockResponse = { ok: true, lastSeq: 42, events: 100 };
+    const mockResponse = { sourceId: SOURCE_ID, ok: true, lastSeq: 42, events: 100 };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(mockResponse), { status: 200 }),
     );
@@ -24,7 +26,7 @@ describe('WhatsAppManagerReadProvider', () => {
   });
 
   it('calls events endpoint with since and limit', async () => {
-    const mockResponse = { events: [], nextSince: 10, hasMore: false, lastSeq: 42 };
+    const mockResponse = { sourceId: SOURCE_ID, events: [], nextSince: 10, hasMore: false, lastSeq: 42 };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(mockResponse), { status: 200 }),
     );
@@ -38,7 +40,7 @@ describe('WhatsAppManagerReadProvider', () => {
   });
 
   it('calls snapshots endpoint with optional groupId', async () => {
-    const mockResponse = { groups: [] };
+    const mockResponse = { sourceId: SOURCE_ID, groups: [] };
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(mockResponse), { status: 200 }),
     );
@@ -52,7 +54,7 @@ describe('WhatsAppManagerReadProvider', () => {
 
   it('calls snapshots endpoint without groupId', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ groups: [] }), { status: 200 }),
+      new Response(JSON.stringify({ sourceId: SOURCE_ID, groups: [] }), { status: 200 }),
     );
 
     await provider.snapshots();
@@ -89,7 +91,7 @@ describe('WhatsAppManagerReadProvider', () => {
   it('strips trailing slash from baseUrl', async () => {
     const p = new WhatsAppManagerReadProvider('https://wm.example.com/', 'tok');
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ ok: true, lastSeq: 0, events: 0 }), { status: 200 }),
+      new Response(JSON.stringify({ sourceId: SOURCE_ID, ok: true, lastSeq: 0, events: 0 }), { status: 200 }),
     );
 
     await p.health();
@@ -101,7 +103,7 @@ describe('WhatsAppManagerReadProvider', () => {
 
   it('uses default limit of 2000 for events', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ events: [], nextSince: 0, hasMore: false, lastSeq: 0 }), { status: 200 }),
+      new Response(JSON.stringify({ sourceId: SOURCE_ID, events: [], nextSince: 0, hasMore: false, lastSeq: 0 }), { status: 200 }),
     );
 
     await provider.events(0);
@@ -109,5 +111,13 @@ describe('WhatsAppManagerReadProvider', () => {
       expect.stringContaining('limit=2000'),
       expect.any(Object),
     );
+  });
+
+  it('fails closed when the provider omits its source identity', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, lastSeq: 0, events: 0 }), { status: 200 }),
+    );
+
+    await expect(provider.health()).rejects.toThrow('invalid or missing source identity');
   });
 });

@@ -1,4 +1,5 @@
 import { createWorkerLogger } from '../logger.js';
+import { assertProviderSourceId } from '../source-aware-cursor.js';
 
 const logger = createWorkerLogger();
 const REQUEST_TIMEOUT_MS = 10000;
@@ -23,6 +24,7 @@ export interface WmEvent {
 }
 
 export interface WmEventsResponse {
+  sourceId: string;
   events: WmEvent[];
   nextSince: number;
   hasMore: boolean;
@@ -30,6 +32,7 @@ export interface WmEventsResponse {
 }
 
 export interface WmHealthResponse {
+  sourceId: string;
   ok: boolean;
   lastSeq: number;
   events: number;
@@ -46,6 +49,7 @@ export interface WmSnapshotGroup {
 }
 
 export interface WmSnapshotsResponse {
+  sourceId: string;
   groups: WmSnapshotGroup[];
 }
 
@@ -85,20 +89,26 @@ export class WhatsAppManagerReadProvider implements WhatsAppManagerProvider {
   }
 
   async health(): Promise<WmHealthResponse> {
-    return this.request<WmHealthResponse>('/api/integration/health');
+    const response = await this.request<WmHealthResponse>('/api/integration/health');
+    assertProviderSourceId(response.sourceId);
+    return response;
   }
 
   async events(since: number, limit = 2000): Promise<WmEventsResponse> {
-    return this.request<WmEventsResponse>(
+    const response = await this.request<WmEventsResponse>(
       `/api/integration/events?since=${since}&limit=${limit}`,
     );
+    assertProviderSourceId(response.sourceId);
+    return response;
   }
 
   async snapshots(groupId?: string): Promise<WmSnapshotsResponse> {
     const qs = groupId ? `?groupId=${encodeURIComponent(groupId)}` : '';
-    return this.request<WmSnapshotsResponse>(
+    const response = await this.request<WmSnapshotsResponse>(
       `/api/integration/snapshots${qs}`,
     );
+    assertProviderSourceId(response.sourceId);
+    return response;
   }
 }
 

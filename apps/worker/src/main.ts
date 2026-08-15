@@ -6,11 +6,19 @@ import { processEventBatch } from './processors/group-events.js';
 import { reconcileSnapshots } from './processors/snapshot-reconciliation.js';
 import { startHealthServer } from './health.js';
 import {
+  establishProviderBaseline,
+  markProviderBaselineRequired,
   recordProviderFailure,
   recordSnapshotObservation,
   recordSuccessfulPoll,
   sanitizeProviderError,
 } from './integration-health.js';
+import {
+  GROUP_MANAGER_INTEGRATION,
+  assertProviderSourceId,
+  providerIntegrationKey,
+  requiresProviderBaseline,
+} from './source-aware-cursor.js';
 import {
   startOutboundMessageWorker,
   startIntegrationTaskWorker,
@@ -35,8 +43,11 @@ async function pollEvents(): Promise<void> {
   if (!provider) return;
 
   const db = getClient();
+  let integration = GROUP_MANAGER_INTEGRATION;
   try {
     const providerHealth = await provider.health();
+    const sourceId = assertProviderSourceId(providerHealth.sourceId);
+    integration = providerIntegrationKey(sourceId);
     if (!providerHealth.ok || providerHealth.connected === false) {
       throw new Error(providerHealth.connected === false
         ? 'WhatsApp Manager: provider disconnected'
@@ -44,32 +55,35 @@ async function pollEvents(): Promise<void> {
     }
 
     const cursorRecord = await db.integrationCursor.findUnique({
-      where: { integration: 'whatsapp-manager' },
+      where: { integration },
     });
 
-    if (!cursorRecord || cursorRecord.lastPolledAt === null) {
-      const transition = await recordSuccessfulPoll(db, {
-        cursor: providerHealth.lastSeq,
+    if (requiresProviderBaseline(cursorRecord)) {
+      await markProviderBaselineRequired(db, {
+        sourceId,
         providerLastSeq: providerHealth.lastSeq,
         providerConnected: providerHealth.connected,
       });
-      logger.info({
-        event: 'integration_cursor_initialized',
-        cursor: providerHealth.lastSeq,
-        recovered: transition.recovered,
-      }, 'WhatsApp Manager cursor initialized at latest event');
+      logger.warn({
+        event: 'integration_baseline_required',
+        source: integration,
+      }, 'Incremental polling blocked until a fresh snapshot establishes the baseline');
       return;
     }
 
-    let since = parseInt(cursorRecord.cursor, 10);
+    const activeCursor = cursorRecord!;
+    let since = parseInt(activeCursor.cursor, 10);
     let totalProcessed = 0;
     let hasMore = true;
 
     while (hasMore) {
       const response = await provider.events(since);
+      if (assertProviderSourceId(response.sourceId) !== sourceId) {
+        throw new Error('WhatsApp Manager: source identity changed during event polling');
+      }
 
       if (response.events.length > 0) {
-        const result = await processEventBatch(db, response.events);
+        const result = await processEventBatch(db, response.events, integration);
         totalProcessed += result.processed;
 
         if (result.failed > 0) {
@@ -83,6 +97,7 @@ async function pollEvents(): Promise<void> {
       }
 
       const transition = await recordSuccessfulPoll(db, {
+        integration,
         cursor: since,
         providerLastSeq: response.lastSeq,
         providerConnected: providerHealth.connected,
@@ -107,6 +122,7 @@ async function pollEvents(): Promise<void> {
       db,
       error,
       {
+        integration,
         scope: 'poll',
         ...(error instanceof Error && error.message.includes('provider disconnected')
           ? { providerConnected: false }
@@ -127,22 +143,50 @@ async function runReconciliation(): Promise<void> {
   if (!provider) return;
 
   const db = getClient();
+  let integration = GROUP_MANAGER_INTEGRATION;
 
   try {
+    const preflight = await provider.health();
+    const sourceId = assertProviderSourceId(preflight.sourceId);
+    integration = providerIntegrationKey(sourceId);
     const result = await reconcileSnapshots(db, provider);
     const snapshotReconciled = result.groupsReconciled > 0
       && result.skippedStale === 0
       && result.skippedIncomplete === 0
       && result.skippedDisconnected === 0;
-    const transition = await recordSnapshotObservation(db, {
-      providerSnapshotAt: result.oldestSnapshotAt
-        ? new Date(result.oldestSnapshotAt)
-        : null,
-      ...(snapshotReconciled ? { successfulAt: new Date() } : {}),
-      ...(result.providerConnected === null
-        ? {}
-        : { providerConnected: result.providerConnected }),
-    });
+    const providerSnapshotAt = result.oldestSnapshotAt
+      ? new Date(result.oldestSnapshotAt)
+      : null;
+    const cursorRecord = await db.integrationCursor.findUnique({ where: { integration } });
+    let transition: { recovered: boolean } = { recovered: false };
+
+    if (snapshotReconciled && providerSnapshotAt && requiresProviderBaseline(cursorRecord)) {
+      const baselineHealth = await provider.health();
+      if (assertProviderSourceId(baselineHealth.sourceId) !== sourceId) {
+        throw new Error('WhatsApp Manager: source identity changed before baseline');
+      }
+      await establishProviderBaseline(db, {
+        sourceId,
+        cursor: baselineHealth.lastSeq,
+        providerSnapshotAt,
+        providerConnected: baselineHealth.connected,
+      });
+      logger.info({
+        event: 'integration_baseline_established',
+        source: integration,
+        cursor: baselineHealth.lastSeq,
+      }, 'Fresh snapshot established a source-aware incremental baseline');
+      transition = { recovered: true };
+    } else {
+      transition = await recordSnapshotObservation(db, {
+        integration,
+        providerSnapshotAt,
+        ...(snapshotReconciled ? { successfulAt: new Date() } : {}),
+        ...(result.providerConnected === null
+          ? {}
+          : { providerConnected: result.providerConnected }),
+      });
+    }
     if (transition.recovered) {
       logger.info({
         event: 'integration_health_transition',
@@ -153,7 +197,7 @@ async function runReconciliation(): Promise<void> {
     logger.info({ event: 'reconciliation_success', ...result },
       'Reconciliation cycle complete');
   } catch (err) {
-    const message = await recordProviderFailure(db, err, { scope: 'snapshot' });
+    const message = await recordProviderFailure(db, err, { integration, scope: 'snapshot' });
     logger.error({ event: 'provider_error', error: message }, 'Reconciliation failed');
   }
 }
