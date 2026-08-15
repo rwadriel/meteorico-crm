@@ -37,6 +37,7 @@ const SECTION_PERMISSIONS: Record<string, [string, string]> = {
   contacts: ['contacts', 'read'],
   groups: ['groups', 'read'],
   messages: ['messages', 'read'],
+  templates: ['messages', 'read'],
   flows: ['campaigns', 'read'],
   ai: ['campaigns', 'read'],
   integrations: ['settings', 'read'],

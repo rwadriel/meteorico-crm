@@ -4,6 +4,7 @@ export { CampaignsPage } from './CampaignsPage.js';
 export { GroupsPage } from './GroupsPage.js';
 export { ContactsPage } from './ContactsPage.js';
 export { MessagesPage } from './MessagesPage.js';
+export { TemplatesPage } from './TemplatesPage.js';
 export { FlowsPage } from './FlowsPage.js';
 export { AiPage } from './AiPage.js';
 export { IntegrationsPage } from './IntegrationsPage.js';

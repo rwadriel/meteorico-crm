@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Megaphone, Users, MessageSquare,
   GitBranch, Bot, Plug, Upload, Shield, Settings,
-  Menu, X, LogOut, ChevronRight, UsersRound,
+  Menu, X, LogOut, ChevronRight, UsersRound, FileText,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.js';
 import { useCanAccess } from '../hooks/usePermission.js';
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { to: '/groups', label: 'Grupos', icon: UsersRound, section: 'groups' },
   { to: '/contacts', label: 'Contatos', icon: Users, section: 'contacts' },
   { to: '/messages', label: 'Mensagens', icon: MessageSquare, section: 'messages' },
+  { to: '/templates', label: 'Templates', icon: FileText, section: 'templates' },
   { to: '/flows', label: 'Fluxos', icon: GitBranch, section: 'flows' },
   { to: '/ai', label: 'IA', icon: Bot, section: 'ai' },
   { to: '/integrations', label: 'Integracoes', icon: Plug, section: 'integrations' },

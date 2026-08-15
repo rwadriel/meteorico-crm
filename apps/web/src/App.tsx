@@ -5,7 +5,7 @@ import { ProtectedRoute } from './components/ProtectedRoute.js';
 import {
   LoginPage, DashboardPage, CampaignsPage, GroupsPage,
   ContactsPage, MessagesPage, FlowsPage, AiPage,
-  IntegrationsPage, ImportsPage, AuditPage, SettingsPage,
+  TemplatesPage, IntegrationsPage, ImportsPage, AuditPage, SettingsPage,
   PrivacyPolicyPage,
 } from './pages/index.js';
 
@@ -48,6 +48,7 @@ export function App() {
             <Route path="groups" element={<GroupsPage />} />
             <Route path="contacts" element={<ContactsPage />} />
             <Route path="messages" element={<MessagesPage />} />
+            <Route path="templates" element={<TemplatesPage />} />
             <Route path="flows" element={<FlowsPage />} />
             <Route path="ai" element={<AiPage />} />
             <Route path="integrations" element={<IntegrationsPage />} />
