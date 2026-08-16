@@ -50,8 +50,38 @@ export interface ProviderCapabilities {
   handoff: boolean;
 }
 
+export interface MetaGraphError {
+  type: string | null;
+  code: number | null;
+  subcode: number | null;
+  message: string | null;
+  fbtrace_id: string | null;
+}
+
+export interface MetaCheckResult {
+  status: 'ok' | 'failed' | 'not_run';
+  httpStatus: number | null;
+  error: MetaGraphError | null;
+}
+
+export interface MetaTokenDiagnostics {
+  present: boolean;
+  empty: boolean;
+  leadingWhitespace: boolean;
+  trailingWhitespace: boolean;
+  containsNewline: boolean;
+  wrappedInQuotes: boolean;
+  length: number;
+}
+
 export interface MetaAccessVerification {
   authenticated: boolean;
+  tokenDiagnostics: MetaTokenDiagnostics;
+  checks: {
+    tokenBasicAuth: MetaCheckResult;
+    waba: MetaCheckResult;
+    phoneNumber: MetaCheckResult;
+  };
   phoneNumber: { id: string; displayNumber: string; verifiedName: string; qualityRating: string } | null;
   waba: { id: string; name: string } | null;
   error: string | null;
@@ -286,50 +316,125 @@ export class MetaCloudWhatsAppProvider implements MessagingProvider {
   }
 
   async verifyAccess(): Promise<MetaAccessVerification> {
+    const token = this.config.accessToken;
+    const tokenDiagnostics: MetaTokenDiagnostics = {
+      present: token !== undefined && token !== null,
+      empty: !token || token.length === 0,
+      leadingWhitespace: !!token && token !== token.trimStart(),
+      trailingWhitespace: !!token && token !== token.trimEnd(),
+      containsNewline: !!token && /[\r\n]/.test(token),
+      wrappedInQuotes: !!token && token.length >= 2 &&
+        ((token.startsWith('"') && token.endsWith('"')) ||
+         (token.startsWith("'") && token.endsWith("'"))),
+      length: token?.length ?? 0,
+    };
+
     const result: MetaAccessVerification = {
       authenticated: false,
+      tokenDiagnostics,
+      checks: {
+        tokenBasicAuth: { status: 'not_run', httpStatus: null, error: null },
+        waba: { status: 'not_run', httpStatus: null, error: null },
+        phoneNumber: { status: 'not_run', httpStatus: null, error: null },
+      },
       phoneNumber: null,
       waba: null,
       error: null,
     };
 
+    if (tokenDiagnostics.empty) {
+      result.error = 'Token is empty';
+      return result;
+    }
+
+    const effectiveToken = token.trim().replace(/^["']|["']$/g, '');
+    const authHeaders = { Authorization: `Bearer ${effectiveToken}` };
+
+    try {
+      const meResp = await fetch(
+        `https://graph.facebook.com/${this.graphApiVersion}/me`,
+        { headers: authHeaders },
+      );
+      const meBody = (await meResp.json().catch(() => null)) as unknown;
+      result.checks.tokenBasicAuth.httpStatus = meResp.status;
+      if (!meResp.ok) {
+        result.checks.tokenBasicAuth.status = 'failed';
+        result.checks.tokenBasicAuth.error = extractMetaError(meBody);
+        result.error = `Token basic auth failed (HTTP ${meResp.status})`;
+      } else {
+        result.checks.tokenBasicAuth.status = 'ok';
+      }
+    } catch (e) {
+      result.checks.tokenBasicAuth.status = 'failed';
+      result.checks.tokenBasicAuth.error = {
+        type: 'NetworkError', code: null, subcode: null,
+        message: e instanceof Error ? e.message : 'Unknown error',
+        fbtrace_id: null,
+      };
+      result.error = e instanceof Error ? e.message : 'Unknown error';
+    }
+
+    try {
+      const wabaResp = await fetch(
+        `https://graph.facebook.com/${this.graphApiVersion}/${this.config.wabaId}?fields=name`,
+        { headers: authHeaders },
+      );
+      const wabaBody = (await wabaResp.json().catch(() => null)) as unknown;
+      result.checks.waba.httpStatus = wabaResp.status;
+      if (!wabaResp.ok) {
+        result.checks.waba.status = 'failed';
+        result.checks.waba.error = extractMetaError(wabaBody);
+        if (!result.error) result.error = `WABA read failed (HTTP ${wabaResp.status})`;
+      } else {
+        result.checks.waba.status = 'ok';
+        const wabaRecord = asRecord(wabaBody);
+        result.waba = {
+          id: readString(wabaRecord?.id) ?? this.config.wabaId,
+          name: readString(wabaRecord?.name) ?? '',
+        };
+      }
+    } catch (e) {
+      result.checks.waba.status = 'failed';
+      result.checks.waba.error = {
+        type: 'NetworkError', code: null, subcode: null,
+        message: e instanceof Error ? e.message : 'Unknown error',
+        fbtrace_id: null,
+      };
+    }
+
     try {
       const phoneResp = await fetch(
         `https://graph.facebook.com/${this.graphApiVersion}/${this.config.phoneNumberId}?fields=display_phone_number,verified_name,quality_rating`,
-        { headers: { Authorization: `Bearer ${this.config.accessToken}` } },
+        { headers: authHeaders },
       );
       const phoneBody = (await phoneResp.json().catch(() => null)) as unknown;
+      result.checks.phoneNumber.httpStatus = phoneResp.status;
       if (!phoneResp.ok) {
-        result.error = `Phone Number read failed (HTTP ${phoneResp.status})`;
-        return result;
+        result.checks.phoneNumber.status = 'failed';
+        result.checks.phoneNumber.error = extractMetaError(phoneBody);
+        if (!result.error) result.error = `Phone Number read failed (HTTP ${phoneResp.status})`;
+      } else {
+        result.checks.phoneNumber.status = 'ok';
+        const phoneRecord = asRecord(phoneBody);
+        result.phoneNumber = {
+          id: readString(phoneRecord?.id) ?? this.config.phoneNumberId,
+          displayNumber: readString(phoneRecord?.display_phone_number) ?? '',
+          verifiedName: readString(phoneRecord?.verified_name) ?? '',
+          qualityRating: readString(phoneRecord?.quality_rating) ?? '',
+        };
       }
-      const phoneRecord = asRecord(phoneBody);
-      result.phoneNumber = {
-        id: readString(phoneRecord?.id) ?? this.config.phoneNumberId,
-        displayNumber: readString(phoneRecord?.display_phone_number) ?? '',
-        verifiedName: readString(phoneRecord?.verified_name) ?? '',
-        qualityRating: readString(phoneRecord?.quality_rating) ?? '',
-      };
-
-      const wabaResp = await fetch(
-        `https://graph.facebook.com/${this.graphApiVersion}/${this.config.wabaId}?fields=name`,
-        { headers: { Authorization: `Bearer ${this.config.accessToken}` } },
-      );
-      const wabaBody = (await wabaResp.json().catch(() => null)) as unknown;
-      if (!wabaResp.ok) {
-        result.error = `WABA read failed (HTTP ${wabaResp.status})`;
-        return result;
-      }
-      const wabaRecord = asRecord(wabaBody);
-      result.waba = {
-        id: readString(wabaRecord?.id) ?? this.config.wabaId,
-        name: readString(wabaRecord?.name) ?? '',
-      };
-
-      result.authenticated = true;
     } catch (e) {
-      result.error = e instanceof Error ? e.message : 'Unknown error';
+      result.checks.phoneNumber.status = 'failed';
+      result.checks.phoneNumber.error = {
+        type: 'NetworkError', code: null, subcode: null,
+        message: e instanceof Error ? e.message : 'Unknown error',
+        fbtrace_id: null,
+      };
     }
+
+    result.authenticated = result.checks.tokenBasicAuth.status === 'ok' &&
+      result.checks.waba.status === 'ok' &&
+      result.checks.phoneNumber.status === 'ok';
 
     return result;
   }
@@ -372,6 +477,18 @@ export class MetaCloudWhatsAppProvider implements MessagingProvider {
       },
     };
   }
+}
+
+function extractMetaError(body: unknown): MetaGraphError {
+  const root = asRecord(body);
+  const err = asRecord(root?.error);
+  return {
+    type: readString(err?.type) ?? null,
+    code: readNumber(err?.code) ?? null,
+    subcode: readNumber(err?.error_subcode) ?? null,
+    message: readString(err?.message) ?? null,
+    fbtrace_id: readString(err?.fbtrace_id) ?? null,
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
