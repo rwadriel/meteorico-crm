@@ -21,9 +21,11 @@ RUN pnpm --filter @meteorico/shared run build && \
 
 FROM nginx:alpine AS production
 RUN sed -i 's|^pid .*;|pid /tmp/nginx.pid;|' /etc/nginx/nginx.conf && \
-    chown -R nginx:nginx /var/cache/nginx /etc/nginx/conf.d
+    mkdir -p /etc/nginx/templates && \
+    chown -R nginx:nginx /var/cache/nginx /etc/nginx/conf.d /etc/nginx/templates
 COPY --chown=nginx:nginx --from=build /app/apps/web/dist /usr/share/nginx/html
-COPY --chown=nginx:nginx apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --chown=nginx:nginx apps/web/nginx.conf /etc/nginx/templates/default.conf.template
+ENV API_PROXY_HOST=api
 USER nginx
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
