@@ -50,6 +50,13 @@ export interface ProviderCapabilities {
   handoff: boolean;
 }
 
+export interface MetaAccessVerification {
+  authenticated: boolean;
+  phoneNumber: { id: string; displayNumber: string; verifiedName: string; qualityRating: string } | null;
+  waba: { id: string; name: string } | null;
+  error: string | null;
+}
+
 export interface MessagingProvider {
   name: string;
   capabilities: ProviderCapabilities;
@@ -276,6 +283,55 @@ export class MetaCloudWhatsAppProvider implements MessagingProvider {
     }
 
     return payloads;
+  }
+
+  async verifyAccess(): Promise<MetaAccessVerification> {
+    const result: MetaAccessVerification = {
+      authenticated: false,
+      phoneNumber: null,
+      waba: null,
+      error: null,
+    };
+
+    try {
+      const phoneResp = await fetch(
+        `https://graph.facebook.com/${this.graphApiVersion}/${this.config.phoneNumberId}?fields=display_phone_number,verified_name,quality_rating`,
+        { headers: { Authorization: `Bearer ${this.config.accessToken}` } },
+      );
+      const phoneBody = (await phoneResp.json().catch(() => null)) as unknown;
+      if (!phoneResp.ok) {
+        result.error = `Phone Number read failed (HTTP ${phoneResp.status})`;
+        return result;
+      }
+      const phoneRecord = asRecord(phoneBody);
+      result.phoneNumber = {
+        id: readString(phoneRecord?.id) ?? this.config.phoneNumberId,
+        displayNumber: readString(phoneRecord?.display_phone_number) ?? '',
+        verifiedName: readString(phoneRecord?.verified_name) ?? '',
+        qualityRating: readString(phoneRecord?.quality_rating) ?? '',
+      };
+
+      const wabaResp = await fetch(
+        `https://graph.facebook.com/${this.graphApiVersion}/${this.config.wabaId}?fields=name`,
+        { headers: { Authorization: `Bearer ${this.config.accessToken}` } },
+      );
+      const wabaBody = (await wabaResp.json().catch(() => null)) as unknown;
+      if (!wabaResp.ok) {
+        result.error = `WABA read failed (HTTP ${wabaResp.status})`;
+        return result;
+      }
+      const wabaRecord = asRecord(wabaBody);
+      result.waba = {
+        id: readString(wabaRecord?.id) ?? this.config.wabaId,
+        name: readString(wabaRecord?.name) ?? '',
+      };
+
+      result.authenticated = true;
+    } catch (e) {
+      result.error = e instanceof Error ? e.message : 'Unknown error';
+    }
+
+    return result;
   }
 
   formatInteractive(payload: MessagePayload): MessagePayload {

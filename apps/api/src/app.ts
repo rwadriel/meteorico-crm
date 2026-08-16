@@ -29,6 +29,7 @@ import { queueRoutes } from './routes/queues.js';
 import { contactRoutes } from './routes/contacts.js';
 import { auditRoutes } from './routes/audit-logs.js';
 import { settingsRoutes } from './routes/settings.js';
+import { metaVerifyRoutes } from './routes/meta-verify.js';
 import { csrfProtection } from './middleware/csrf.js';
 import { createLogger } from './logger.js';
 
@@ -110,6 +111,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(queueRoutes);
   await app.register(auditRoutes);
   await app.register(settingsRoutes);
+  await app.register(metaVerifyRoutes);
   await app.register(redirectRoutes);
   await app.register(webhookRoutes);
   await app.register(eduzzWebhookRoutes);
