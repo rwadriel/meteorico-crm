@@ -9,6 +9,10 @@ Antes do primeiro deploy, gere valores independentes para `POSTGRES_PASSWORD`, `
 O bootstrap importa `N8N_INTERNAL_TOKEN` como uma credencial `HTTP Header Auth`
 criptografada pelo n8n. Os workflows referenciam somente o ID dessa credencial;
 o acesso generico de nodes a variaveis do container permanece bloqueado.
+Depois do primeiro boot, a chave registrada no volume persistente do n8n e a
+fonte de verdade. O entrypoint a reutiliza para impedir perda de credenciais se
+a variavel do painel for alterada acidentalmente. Para rotacionar a chave,
+exporte ou recrie as credenciais antes de atualizar o arquivo persistente.
 
 A imagem de `n8n/Dockerfile` importa e publica automaticamente os quatro JSON de `n8n/workflows` com IDs estáveis. Confirme no editor que os quatro aparecem como publicados após a primeira subida. Mantenha `WHATSAPP_OUTBOUND_ENABLED=false` até o teste oficial autorizado estar concluído.
 

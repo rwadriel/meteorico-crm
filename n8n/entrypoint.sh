@@ -1,6 +1,14 @@
 #!/bin/sh
 set -eu
 
+# Depois do primeiro boot, o arquivo persistente e a fonte de verdade da chave.
+# Isso preserva credenciais se a variavel do painel for alterada por engano.
+persistent_key="$(node -e "const fs=require('fs');try{const c=JSON.parse(fs.readFileSync('/home/node/.n8n/config','utf8'));if(c.encryptionKey)process.stdout.write(c.encryptionKey)}catch{}")"
+if [ -n "$persistent_key" ]; then
+  export N8N_ENCRYPTION_KEY="$persistent_key"
+fi
+unset persistent_key
+
 case "${N8N_INTERNAL_TOKEN:-}" in
   '')
     echo "N8N_INTERNAL_TOKEN is required" >&2
