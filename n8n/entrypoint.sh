@@ -6,6 +6,9 @@ set -eu
 persistent_key="$(node -e "const fs=require('fs');try{const c=JSON.parse(fs.readFileSync('/home/node/.n8n/config','utf8'));if(c.encryptionKey)process.stdout.write(c.encryptionKey)}catch{}")"
 if [ -n "$persistent_key" ]; then
   export N8N_ENCRYPTION_KEY="$persistent_key"
+  echo "bootstrap: persistent encryption key loaded"
+else
+  echo "bootstrap: using environment encryption key"
 fi
 unset persistent_key
 
@@ -37,11 +40,15 @@ cat >"$credential_file" <<EOF
 ]
 EOF
 
+echo "bootstrap: importing internal credential"
 n8n import:credentials --input="$credential_file"
+echo "bootstrap: internal credential imported"
 rm -f "$credential_file"
 trap - EXIT HUP INT TERM
 
+echo "bootstrap: importing workflows"
 n8n import:workflow --separate --input=/opt/meteorico/workflows
+echo "bootstrap: workflows imported"
 
 for workflow_id in \
   meteoricoWaSend \
@@ -49,7 +56,9 @@ for workflow_id in \
   meteoricoWaInbound \
   meteoricoWaRetry
 do
+  echo "bootstrap: publishing $workflow_id"
   n8n publish:workflow --id="$workflow_id"
 done
 
+echo "bootstrap: starting n8n server"
 exec /docker-entrypoint.sh start
