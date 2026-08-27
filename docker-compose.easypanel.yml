@@ -17,7 +17,8 @@ services:
   api:
     build:
       context: .
-      dockerfile: apps/api/Dockerfile
+      dockerfile: Dockerfile.easypanel
+      target: api
     restart: unless-stopped
     depends_on:
       postgres:
@@ -57,7 +58,8 @@ services:
   web:
     build:
       context: .
-      dockerfile: apps/web/Dockerfile
+      dockerfile: Dockerfile.easypanel
+      target: web
     restart: unless-stopped
     depends_on:
       - api
