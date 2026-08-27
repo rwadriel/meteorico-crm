@@ -7,6 +7,7 @@ import { writeAuditLog } from '../services/audit.js';
 import { getMockProvider } from '../providers/messaging-mock.js';
 import { createMetaCloudProvider } from '../providers/messaging-provider.js';
 import type { MessagingProvider, WebhookPayload } from '../providers/messaging.js';
+import { handleFollowupDeliveryStatus, handleFollowupInbound } from '../services/followup.js';
 
 interface RawBodyRequest extends FastifyRequest {
   rawBody?: Buffer;
@@ -151,6 +152,17 @@ async function processWebhookPayloads(
 
       try {
         const messageResult = await handleIncomingMessage(db, payload.message, provider);
+        const followupInbound = await handleFollowupInbound(db, {
+          contactId: messageResult.contactId,
+          content: payload.message.content,
+          receivedAt: payload.message.timestamp,
+        });
+        if (followupInbound.campaignId) {
+          await notifyN8n(process.env.N8N_INBOUND_WEBHOOK_URL, {
+            campaign_id: followupInbound.campaignId,
+            opt_out: followupInbound.isOptOut,
+          });
+        }
         conversationIds.push(messageResult.conversationId);
         isNew = isNew || messageResult.isNew;
 
@@ -193,6 +205,13 @@ async function processWebhookPayloads(
 
       try {
         await handleDeliveryStatus(db, payload.status);
+        const followupStatus = await handleFollowupDeliveryStatus(db, payload.status);
+        if (followupStatus) {
+          await notifyN8n(process.env.N8N_STATUS_WEBHOOK_URL, {
+            campaign_id: followupStatus.campaignId,
+            status: followupStatus.status,
+          });
+        }
         await completeClaim(provider.name, externalEventId);
         processed += 1;
       } catch (error) {
@@ -259,4 +278,18 @@ function safeEqual(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left);
   const rightBuffer = Buffer.from(right);
   return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+async function notifyN8n(url: string | undefined, body: Record<string, unknown>): Promise<void> {
+  if (!url || !process.env.N8N_INTERNAL_TOKEN) return;
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Internal-Token': process.env.N8N_INTERNAL_TOKEN },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch {
+    // O webhook oficial já foi persistido; falha de observabilidade do n8n não deve pedir retry à Meta.
+  }
 }

@@ -1,5 +1,11 @@
 # Arquitetura do Meteorico CRM
 
+## Módulo de follow-up oficial
+
+O fluxo de recuperação usa `web -> api -> PostgreSQL`, com n8n orquestrando lotes controlados. A API chama somente a Graph API oficial da Meta, valida a assinatura do webhook antes de processar eventos e mantém a chave única `campaign_id + contact_id` contra reenvios. O n8n utiliza o schema isolado `n8n` na mesma instância PostgreSQL e volume persistente próprio.
+
+PostgreSQL e n8n não são expostos sem autenticação. A interface nunca recebe tokens Meta; todos os segredos permanecem no ambiente protegido do EasyPanel.
+
 ## Visao geral
 
 O sistema e organizado como um monorepo TypeScript com pnpm workspaces,

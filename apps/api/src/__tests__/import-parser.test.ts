@@ -130,6 +130,17 @@ describe('parseContactsCsv – header-based', () => {
     expect(rows[0].isStudent).toBe(false);
   });
 
+  it('normalizes purchase status values with accents and underscores', () => {
+    const csv = [
+      'whatsapp,status_compra',
+      '11999990013,não_comprou',
+      '11999990014,comprou',
+    ].join('\n');
+    const { rows } = parseContactsCsv(csv);
+    expect(rows[0].purchaseStatus).toBe('not_purchased');
+    expect(rows[1].purchaseStatus).toBe('purchased');
+  });
+
   // ─── Test 9: Duplicate phone in same CSV ─────────────────────────
 
   it('9. handles duplicate phone in same CSV (both rows parsed)', () => {
@@ -203,6 +214,18 @@ describe('parseContactsCsv – header-based', () => {
     const { rows } = parseContactsCsv(csv);
     expect(rows[0].totalParticipations).toBe(5);
     expect(rows[0].lastEdition).toBe(42);
+  });
+
+  it('recognizes WhatsApp/celular headers and purchase status', () => {
+    const csv = 'whatsapp,nome,comprou,origem_campanha\n(91) 99999-9999,Contato Ficticio,sim,grupo-42';
+    const { rows, errors } = parseContactsCsv(csv);
+    expect(errors).toHaveLength(0);
+    expect(rows[0]).toMatchObject({
+      phone: '5591999999999',
+      phoneRaw: '(91) 99999-9999',
+      purchaseStatus: 'purchased',
+      campaignSource: 'grupo-42',
+    });
   });
 });
 

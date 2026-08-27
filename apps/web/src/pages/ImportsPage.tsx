@@ -205,10 +205,10 @@ export function ImportsPage() {
     <div>
       <div className="content-header">
         <div>
-          <h1 className="content-title">Importacoes</h1>
-          <p className="content-subtitle">Importe contatos e participacoes via CSV</p>
+          <h1 className="content-title">Importar CSV</h1>
+          <p className="content-subtitle">Importe contatos, telefones e status de compra com prévia antes de salvar</p>
         </div>
-        {step === 'list' && <Button onClick={() => setStep('upload')}>Nova Importacao</Button>}
+        {step === 'list' && <Button onClick={() => setStep('upload')}>Nova importação</Button>}
         {step !== 'list' && <Button variant="secondary" onClick={resetWizard}>Voltar</Button>}
       </div>
 
@@ -220,7 +220,7 @@ export function ImportsPage() {
           <h3 style={{ marginBottom: '1rem' }}>Upload de CSV</h3>
 
           <div className="form-group">
-            <label>Tipo de importacao</label>
+            <label>Tipo de importação</label>
             <select className="input" value={importType} onChange={(e) => setImportType(e.target.value as 'contacts' | 'participations')}>
               <option value="contacts">Contatos (carga inicial)</option>
               <option value="participations">Participacoes por campanha</option>

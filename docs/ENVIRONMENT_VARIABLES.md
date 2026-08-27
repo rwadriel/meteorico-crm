@@ -45,10 +45,26 @@ repositorio e o `.env.example` documentam apenas os nomes.
 | META_WHATSAPP_VERIFY_TOKEN | api | Segredo aleatorio usado no desafio GET do webhook | Sim |
 | META_APP_SECRET | api | App Secret usado no HMAC SHA-256 do corpo bruto | Sim |
 | META_GRAPH_API_VERSION | api, worker | Versao fixada da Graph API | Nao (`v25.0`) |
+| META_APPROVED_TEMPLATE_NAMES | api | Nomes aprovados na Meta, separados por virgula | Nao |
 | WHATSAPP_STAGING_ALLOWLIST | api, worker | Telefones E.164 separados por virgula autorizados a receber em staging | Sim |
 
 O worker nao precisa do verify token. O App Secret e obrigatorio somente na
 API, que recebe o webhook. API e worker aplicam a allowlist separadamente.
+
+## Follow-up e n8n
+
+| Variável | Serviço | Descrição |
+|----------|---------|-----------|
+| ADMIN_EMAIL | seed | E-mail do administrador criado somente no bootstrap |
+| ADMIN_INITIAL_PASSWORD | seed | Senha inicial forte; redeploy não redefine a senha existente |
+| N8N_INTERNAL_TOKEN | api, n8n | Segredo compartilhado para endpoints internos |
+| N8N_CAMPAIGN_WEBHOOK_URL | api | Webhook que inicia o fluxo de campanha |
+| N8N_STATUS_WEBHOOK_URL | api | Webhook interno para consolidar status |
+| N8N_INBOUND_WEBHOOK_URL | api | Webhook interno para consolidar resposta e opt-out |
+| METEORICO_API_INTERNAL_URL | n8n | URL privada da API dentro da rede do deploy |
+| N8N_ENCRYPTION_KEY | n8n | Chave forte e estável para credenciais do n8n |
+
+O editor do n8n usa autenticação própria. A Graph API é chamada pela API do CRM para que o token permaneça em um único serviço e a validação de elegibilidade seja refeita imediatamente antes de cada envio.
 
 O limite padrao de snapshot do Group Manager e 7200 segundos. Ele corresponde
 a duas janelas do intervalo padrao de reconciliacao (1 hora): tolera uma coleta

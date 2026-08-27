@@ -1,0 +1,61 @@
+{
+  "name": "Meteórico - WA - Enviar Campanha",
+  "id": "meteoricoWaSend",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "meteorico-campaign", "responseMode": "onReceived", "options": {} },
+      "id": "campaign-webhook",
+      "name": "Receber campanha",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "meteorico-campaign"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.METEORICO_API_INTERNAL_URL + '/internal/followup/campaigns/' + ($json.campaignId || $json.body.campaign_id) + '/process-batch'}}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Internal-Token", "value": "={{$env.N8N_INTERNAL_TOKEN}}" }] },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"batchSize\":10}",
+        "options": { "timeout": 120000 }
+      },
+      "id": "process-batch",
+      "name": "Processar lote controlado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 0]
+    },
+    {
+      "parameters": { "conditions": { "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" }, "conditions": [{ "leftValue": "={{$json.remaining}}", "rightValue": 0, "operator": { "type": "number", "operation": "gt" } }], "combinator": "and" }, "options": {} },
+      "id": "has-more",
+      "name": "Ainda há mensagens?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [520, 0]
+    },
+    {
+      "parameters": { "amount": 2 },
+      "id": "wait",
+      "name": "Aguardar entre lotes",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [760, -100],
+      "webhookId": "meteorico-campaign-wait"
+    }
+  ],
+  "connections": {
+    "Receber campanha": { "main": [[{ "node": "Processar lote controlado", "type": "main", "index": 0 }]] },
+    "Processar lote controlado": { "main": [[{ "node": "Ainda há mensagens?", "type": "main", "index": 0 }]] },
+    "Ainda há mensagens?": { "main": [[{ "node": "Aguardar entre lotes", "type": "main", "index": 0 }], []] },
+    "Aguardar entre lotes": { "main": [[{ "node": "Processar lote controlado", "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1", "saveDataErrorExecution": "all", "saveDataSuccessExecution": "none" },
+  "versionId": "00000000-0000-4000-8000-000000000001",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}

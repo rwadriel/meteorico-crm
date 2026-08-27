@@ -109,7 +109,7 @@ describe('App', () => {
     await user.click(screen.getByRole('button', { name: 'Entrar' }));
 
     await waitFor(() => {
-      expect(screen.getByText('Visao geral do CRM')).toBeDefined();
+      expect(screen.getByText('Visão geral do follow-up pelo WhatsApp')).toBeDefined();
     });
   });
 });

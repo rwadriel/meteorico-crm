@@ -116,11 +116,11 @@ async function main() {
     console.log(`  Role "${roleConfig.name}" seeded with ${roleConfig.permissions.reduce((sum, p) => sum + p.actions.length, 0)} permissions`);
   }
 
-  const adminEmail = process.env.SEED_ADMIN_EMAIL ?? 'admin@meteorico.dev';
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
-  const adminName = process.env.SEED_ADMIN_NAME ?? 'Admin Dev';
+  const adminEmail = process.env.ADMIN_EMAIL ?? process.env.SEED_ADMIN_EMAIL ?? 'admin@meteorico.dev';
+  const adminPassword = process.env.ADMIN_INITIAL_PASSWORD ?? process.env.SEED_ADMIN_PASSWORD;
+  const adminName = process.env.ADMIN_NAME ?? process.env.SEED_ADMIN_NAME ?? 'Administrador';
   if (!adminPassword) {
-    throw new Error('SEED_ADMIN_PASSWORD is required to seed the admin user');
+    throw new Error('ADMIN_INITIAL_PASSWORD is required to seed the admin user');
   }
 
   const ownerRole = await prisma.role.findUnique({ where: { name: 'owner' } });
@@ -130,7 +130,8 @@ async function main() {
 
   await prisma.adminUser.upsert({
     where: { email: adminEmail },
-    update: { name: adminName, passwordHash },
+    // Bootstrap only: redeploys never reset an administrator's current password.
+    update: { name: adminName },
     create: {
       email: adminEmail,
       passwordHash,

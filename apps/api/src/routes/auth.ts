@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { getClient } from '@meteorico/database';
-import { login, revokeSession } from '../services/auth.js';
+import { hashPassword, login, revokeAllUserSessions, revokeSession, verifyPassword } from '../services/auth.js';
 import { writeAuditLog } from '../services/audit.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -96,5 +96,43 @@ export async function authRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'desc' },
     });
     return { sessions };
+  });
+
+  app.post('/auth/change-password', {
+    preHandler: [requireAuth],
+    schema: {
+      body: {
+        type: 'object',
+        required: ['currentPassword', 'newPassword'],
+        properties: {
+          currentPassword: { type: 'string', minLength: 1 },
+          newPassword: { type: 'string', minLength: 12, maxLength: 200 },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { currentPassword, newPassword } = request.body as { currentPassword: string; newPassword: string };
+    const db = getClient();
+    const user = await db.adminUser.findUnique({ where: { id: request.user!.id } });
+    if (!user || !(await verifyPassword(user.passwordHash, currentPassword))) {
+      return reply.status(400).send({ message: 'A senha atual está incorreta' });
+    }
+    if (currentPassword === newPassword) {
+      return reply.status(400).send({ message: 'A nova senha deve ser diferente da atual' });
+    }
+    await db.adminUser.update({
+      where: { id: user.id },
+      data: { passwordHash: await hashPassword(newPassword) },
+    });
+    await revokeAllUserSessions(db, user.id);
+    await writeAuditLog(db, {
+      userId: user.id,
+      action: 'password.changed',
+      resource: 'auth',
+      ipAddress: request.ip,
+      userAgent: request.headers['user-agent'] ?? '',
+    });
+    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    return { message: 'Senha alterada. Entre novamente.' };
   });
 }

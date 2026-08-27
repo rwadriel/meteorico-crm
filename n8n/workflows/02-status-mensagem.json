@@ -1,0 +1,35 @@
+{
+  "name": "Meteórico - WA - Status de Mensagem",
+  "id": "meteoricoWaStatus",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "meteorico-status", "responseMode": "onReceived", "options": {} },
+      "id": "status-webhook",
+      "name": "Evento validado pela API",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "meteorico-status"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.METEORICO_API_INTERNAL_URL + '/internal/followup/campaigns/' + $json.body.campaign_id + '/refresh'}}",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [{ "name": "X-Internal-Token", "value": "={{$env.N8N_INTERNAL_TOKEN}}" }] },
+        "options": {}
+      },
+      "id": "refresh-metrics",
+      "name": "Atualizar métricas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [280, 0]
+    }
+  ],
+  "connections": { "Evento validado pela API": { "main": [[{ "node": "Atualizar métricas", "type": "main", "index": 0 }]] } },
+  "active": true,
+  "settings": { "executionOrder": "v1", "saveDataErrorExecution": "all", "saveDataSuccessExecution": "none" },
+  "versionId": "00000000-0000-4000-8000-000000000002",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}

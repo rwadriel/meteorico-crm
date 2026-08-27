@@ -1,26 +1,19 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Megaphone, Users, MessageSquare,
-  GitBranch, Bot, Plug, Upload, Shield, Settings,
-  Menu, X, LogOut, ChevronRight, UsersRound, FileText,
+  LayoutDashboard, Megaphone, Users, Upload, Settings,
+  Menu, X, LogOut, ChevronRight, FileText,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.js';
 import { useCanAccess } from '../hooks/usePermission.js';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, section: 'dashboard' },
-  { to: '/campaigns', label: 'Campanhas', icon: Megaphone, section: 'campaigns' },
-  { to: '/groups', label: 'Grupos', icon: UsersRound, section: 'groups' },
   { to: '/contacts', label: 'Contatos', icon: Users, section: 'contacts' },
-  { to: '/messages', label: 'Mensagens', icon: MessageSquare, section: 'messages' },
+  { to: '/imports', label: 'Importar CSV', icon: Upload, section: 'imports' },
+  { to: '/followup', label: 'Campanhas', icon: Megaphone, section: 'campaigns' },
   { to: '/templates', label: 'Templates', icon: FileText, section: 'templates' },
-  { to: '/flows', label: 'Fluxos', icon: GitBranch, section: 'flows' },
-  { to: '/ai', label: 'IA', icon: Bot, section: 'ai' },
-  { to: '/integrations', label: 'Integracoes', icon: Plug, section: 'integrations' },
-  { to: '/imports', label: 'Importacoes', icon: Upload, section: 'imports' },
-  { to: '/audit', label: 'Auditoria', icon: Shield, section: 'audit' },
-  { to: '/settings', label: 'Configuracoes', icon: Settings, section: 'settings' },
+  { to: '/settings', label: 'Configurações', icon: Settings, section: 'settings' },
 ];
 
 function Breadcrumbs() {

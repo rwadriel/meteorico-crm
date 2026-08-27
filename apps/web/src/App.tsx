@@ -7,6 +7,7 @@ import {
   ContactsPage, MessagesPage, FlowsPage, AiPage,
   TemplatesPage, IntegrationsPage, ImportsPage, AuditPage, SettingsPage,
   PrivacyPolicyPage,
+  FollowupCampaignsPage,
 } from './pages/index.js';
 
 function LoginGuard() {
@@ -45,6 +46,7 @@ export function App() {
           >
             <Route index element={<DashboardPage />} />
             <Route path="campaigns" element={<CampaignsPage />} />
+            <Route path="followup" element={<FollowupCampaignsPage />} />
             <Route path="groups" element={<GroupsPage />} />
             <Route path="contacts" element={<ContactsPage />} />
             <Route path="messages" element={<MessagesPage />} />

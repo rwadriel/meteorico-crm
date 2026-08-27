@@ -53,6 +53,7 @@ model AdminUser {
   flowsCreated     FlowDefinition[]
   importsCreated   Import[]
   docsCreated      KnowledgeDocument[]
+  followupCampaignsCreated FollowupCampaign[]
 
   redirectLinksCreated  RedirectLink[]
   conversationsAssigned Conversation[]
@@ -93,6 +94,11 @@ model Contact {
   totalPurchases     Int       @default(0) @map("total_purchases")
   isStudent          Boolean   @default(false) @map("is_student")
   metadata           Json?
+  phoneRaw           String?   @map("phone_raw")
+  source             String    @default("meteorico_grupo")
+  campaignSource     String    @default("") @map("campaign_source")
+  purchaseStatus     String    @default("unknown") @map("purchase_status")
+  optOutAt           DateTime? @map("opt_out_at")
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
@@ -106,6 +112,7 @@ model Contact {
   trackingClicks TrackingClick[]
   diagnoses      Diagnosis[]
   preferences    ContactPreference[]
+  followupMessages FollowupCampaignMessage[]
 
   @@index([normalizedPhone])
   @@index([email])
@@ -150,6 +157,66 @@ model Campaign {
   redirectLinks  RedirectLink[]
 
   @@map("campaigns")
+}
+
+// ─── WhatsApp Follow-up CRM ─────────────────────────────────────────
+
+model FollowupCampaign {
+  id                String    @id @default(uuid())
+  name              String
+  templateName      String    @map("template_name")
+  templateLanguage  String    @default("pt_BR") @map("template_language")
+  offerUrl          String?   @map("offer_url")
+  status            String    @default("draft")
+  totalContacts     Int       @default(0) @map("total_contacts")
+  eligibleContacts  Int       @default(0) @map("eligible_contacts")
+  queuedCount       Int       @default(0) @map("queued_count")
+  submittedCount    Int       @default(0) @map("submitted_count")
+  sentCount         Int       @default(0) @map("sent_count")
+  deliveredCount    Int       @default(0) @map("delivered_count")
+  readCount         Int       @default(0) @map("read_count")
+  failedCount       Int       @default(0) @map("failed_count")
+  repliedCount      Int       @default(0) @map("replied_count")
+  optOutCount       Int       @default(0) @map("opt_out_count")
+  createdBy         String    @map("created_by")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  startedAt         DateTime? @map("started_at")
+  finishedAt        DateTime? @map("finished_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  creator  AdminUser                 @relation(fields: [createdBy], references: [id])
+  messages FollowupCampaignMessage[]
+
+  @@index([status, createdAt])
+  @@map("followup_campaigns")
+}
+
+model FollowupCampaignMessage {
+  id                String    @id @default(uuid())
+  campaignId        String    @map("campaign_id")
+  contactId         String    @map("contact_id")
+  metaMessageId     String?   @unique @map("meta_message_id")
+  status            String    @default("queued")
+  errorCode         String?   @map("error_code")
+  errorMessage      String?   @map("error_message")
+  attempts          Int       @default(0)
+  nextAttemptAt     DateTime? @map("next_attempt_at")
+  submittedAt       DateTime? @map("submitted_at")
+  sentAt            DateTime? @map("sent_at")
+  deliveredAt       DateTime? @map("delivered_at")
+  readAt            DateTime? @map("read_at")
+  failedAt          DateTime? @map("failed_at")
+  repliedAt         DateTime? @map("replied_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  campaign FollowupCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact  Contact          @relation(fields: [contactId], references: [id])
+
+  @@unique([campaignId, contactId])
+  @@index([campaignId, status, nextAttemptAt])
+  @@index([contactId, createdAt])
+  @@map("followup_campaign_messages")
 }
 
 model CampaignVersion {

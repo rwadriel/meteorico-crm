@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { getClient } from '@meteorico/database';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
-import { getHistoryQualityCounts } from '../services/participation-history.js';
 import { z } from 'zod';
 
 const listContactsSchema = z.object({
@@ -9,12 +8,16 @@ const listContactsSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().optional(),
   isStudent: z.enum(['true', 'false']).optional(),
+  purchaseStatus: z.enum(['unknown', 'not_purchased', 'purchased']).optional(),
+  optOut: z.enum(['true', 'false']).optional(),
 });
 
 const updateContactSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   email: z.string().email().max(320).optional().nullable(),
   isStudent: z.boolean().optional(),
+  purchaseStatus: z.enum(['unknown', 'not_purchased', 'purchased']).optional(),
+  optOut: z.boolean().optional(),
 });
 
 export async function contactRoutes(app: FastifyInstance) {
@@ -39,6 +42,12 @@ export async function contactRoutes(app: FastifyInstance) {
     if (query.isStudent !== undefined) {
       where.isStudent = query.isStudent === 'true';
     }
+    if (query.purchaseStatus) where.purchaseStatus = query.purchaseStatus;
+    if (query.optOut !== undefined) {
+      where.preferences = query.optOut === 'true'
+        ? { some: { channel: 'whatsapp', optedOut: true } }
+        : { none: { channel: 'whatsapp', optedOut: true } };
+    }
 
     const [contacts, total] = await Promise.all([
       db.contact.findMany({
@@ -52,11 +61,26 @@ export async function contactRoutes(app: FastifyInstance) {
           phone: true,
           email: true,
           isStudent: true,
+          purchaseStatus: true,
+          source: true,
+          campaignSource: true,
+          optOutAt: true,
           totalParticipations: true,
           totalPurchases: true,
           firstSeenAt: true,
           lastSeenAt: true,
           createdAt: true,
+          preferences: { where: { channel: 'whatsapp' }, select: { optedOut: true }, take: 1 },
+          followupMessages: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              status: true,
+              submittedAt: true,
+              createdAt: true,
+              campaign: { select: { name: true } },
+            },
+          },
         },
       }),
       db.contact.count({ where }),
@@ -66,6 +90,12 @@ export async function contactRoutes(app: FastifyInstance) {
       ...c,
       phone: c.phone ? `${c.phone.slice(0, 4)}***${c.phone.slice(-2)}` : null,
       email: c.email ? maskEmail(c.email) : null,
+      optOut: c.preferences[0]?.optedOut ?? false,
+      lastCampaign: c.followupMessages[0]?.campaign.name ?? null,
+      lastSendAt: c.followupMessages[0]?.submittedAt ?? null,
+      lastSendStatus: c.followupMessages[0]?.status ?? null,
+      preferences: undefined,
+      followupMessages: undefined,
     }));
 
     return { contacts: masked, total, page: query.page, limit: query.limit };
@@ -109,7 +139,25 @@ export async function contactRoutes(app: FastifyInstance) {
       return reply.status(404).send({ message: 'Contact not found' });
     }
 
-    const updated = await db.contact.update({ where: { id }, data });
+    const { optOut, ...contactData } = data;
+    const updated = await db.$transaction(async (tx) => {
+      const contact = await tx.contact.update({
+        where: { id },
+        data: {
+          ...contactData,
+          ...(contactData.purchaseStatus === 'purchased' ? { isStudent: true } : {}),
+          ...(optOut === true ? { optOutAt: new Date() } : optOut === false ? { optOutAt: null } : {}),
+        },
+      });
+      if (optOut !== undefined) {
+        await tx.contactPreference.upsert({
+          where: { contactId_channel: { contactId: id, channel: 'whatsapp' } },
+          create: { contactId: id, channel: 'whatsapp', optedOut: optOut, reason: 'admin' },
+          update: { optedOut: optOut, reason: 'admin', blockedAt: optOut ? new Date() : null },
+        });
+      }
+      return contact;
+    });
     return {
       ...updated,
       phone: updated.phone ? `${updated.phone.slice(0, 4)}***${updated.phone.slice(-2)}` : null,
@@ -120,19 +168,24 @@ export async function contactRoutes(app: FastifyInstance) {
   app.get('/contacts/stats', {
     preHandler: requirePermission('contacts', 'read'),
   }, async () => {
-    const [total, students, withEmail, historyQuality] = await Promise.all([
+    const [total, buyers, optOuts, eligible] = await Promise.all([
       db.contact.count(),
-      db.contact.count({ where: { isStudent: true } }),
-      db.contact.count({ where: { email: { not: null } } }),
-      getHistoryQualityCounts(db),
+      db.contact.count({ where: { OR: [{ purchaseStatus: 'purchased' }, { isStudent: true }, { totalPurchases: { gt: 0 } }] } }),
+      db.contact.count({ where: { preferences: { some: { channel: 'whatsapp', optedOut: true } } } }),
+      db.contact.count({ where: {
+        normalizedPhone: { not: null },
+        isStudent: false,
+        totalPurchases: 0,
+        purchaseStatus: { not: 'purchased' },
+        NOT: { preferences: { some: { channel: 'whatsapp', optedOut: true } } },
+      } }),
     ]);
 
     return {
       total,
-      students,
-      withEmail,
-      unresolvedHistory: historyQuality.unresolvedHistory,
-      needsReview: historyQuality.needsReview,
+      buyers,
+      optOuts,
+      eligible,
     };
   });
 }

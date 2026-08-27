@@ -1,6 +1,7 @@
 export { LoginPage } from './LoginPage.js';
 export { DashboardPage } from './DashboardPage.js';
 export { CampaignsPage } from './CampaignsPage.js';
+export { FollowupCampaignsPage } from './FollowupCampaignsPage.js';
 export { GroupsPage } from './GroupsPage.js';
 export { ContactsPage } from './ContactsPage.js';
 export { MessagesPage } from './MessagesPage.js';

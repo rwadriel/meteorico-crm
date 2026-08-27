@@ -5,6 +5,7 @@ import type { PrismaClient } from '@meteorico/database';
 
 interface ParsedContactRow {
   phone: string;
+  phoneRaw: string;
   name: string;
   email: string;
   totalParticipations: number;
@@ -15,6 +16,8 @@ interface ParsedContactRow {
   firstContactDate: string;
   lastContactDate: string;
   notes: string;
+  purchaseStatus: 'unknown' | 'not_purchased' | 'purchased';
+  campaignSource: string;
 }
 
 interface ParsedParticipationRow {
@@ -62,6 +65,10 @@ interface PreviewStats {
 const CONTACT_HEADER_MAP: Record<string, string> = {
   telefone: 'telefone',
   phone: 'telefone',
+  whatsapp: 'telefone',
+  celular: 'telefone',
+  numero: 'telefone',
+  number: 'telefone',
   nome: 'nome',
   name: 'nome',
   email: 'email',
@@ -79,6 +86,12 @@ const CONTACT_HEADER_MAP: Record<string, string> = {
   ultimo_contato: 'data_ultimo_contato',
   observacoes: 'observacoes',
   notes: 'observacoes',
+  comprou: 'comprou',
+  purchase: 'comprou',
+  cliente: 'comprou',
+  status_compra: 'comprou',
+  origem_campanha: 'origem_campanha',
+  campaign_source: 'origem_campanha',
 };
 
 const CONTACT_REQUIRED_HEADERS = ['telefone'];
@@ -275,6 +288,14 @@ export function parseContactsCsv(content: string): { rows: ParsedContactRow[]; e
     const firstContactDate = getField(fields, columnMap, 'data_primeiro_contato');
     const lastContactDate = getField(fields, columnMap, 'data_ultimo_contato');
     const notes = getField(fields, columnMap, 'observacoes');
+    const rawPurchase = getField(fields, columnMap, 'comprou')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[_-]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const campaignSource = getField(fields, columnMap, 'origem_campanha');
 
     if (email && !isValidEmail(email)) {
       errors.push({ row: rowNum, field: 'email', message: 'Invalid email format' });
@@ -297,8 +318,15 @@ export function parseContactsCsv(content: string): { rows: ParsedContactRow[]; e
       lastEdition = parsed;
     }
 
+    const purchaseStatus = ['sim', 'yes', 'true', '1', 'comprou', 'purchased', 'cliente'].includes(rawPurchase)
+      ? 'purchased'
+      : ['nao', 'no', 'false', '0', 'nao comprou', 'not purchased'].includes(rawPurchase)
+        ? 'not_purchased'
+        : 'unknown';
+
     rows.push({
       phone,
+      phoneRaw: rawPhone,
       name,
       email: email ? email.trim().toLowerCase() : '',
       totalParticipations,
@@ -309,6 +337,8 @@ export function parseContactsCsv(content: string): { rows: ParsedContactRow[]; e
       firstContactDate,
       lastContactDate,
       notes,
+      purchaseStatus,
+      campaignSource,
     });
   }
 
@@ -615,7 +645,12 @@ export async function processContactsImport(db: PrismaClient, importId: string) 
             : hasMetadata ? metadata : null;
 
           // aluno=true never downgraded
-          const isStudent = data.isStudent ? true : (existing?.isStudent ?? false);
+          const isStudent = data.isStudent || data.purchaseStatus === 'purchased'
+            ? true
+            : (existing?.isStudent ?? false);
+          const purchaseStatus = existing?.purchaseStatus === 'purchased'
+            ? 'purchased'
+            : data.purchaseStatus;
 
           const resolvedName = data.name || (existing?.name ?? '');
 
@@ -650,6 +685,10 @@ export async function processContactsImport(db: PrismaClient, importId: string) 
           const contactData = {
             name: resolvedName,
             normalizedPhone: data.phone,
+            phoneRaw: data.phoneRaw,
+            source: data.origin || existing?.source || 'meteorico_grupo',
+            campaignSource: data.campaignSource || existing?.campaignSource || '',
+            purchaseStatus,
             isStudent,
             totalParticipations: resolvedParticipations,
             ...(resolvedEmail !== null ? { email: resolvedEmail } : {}),

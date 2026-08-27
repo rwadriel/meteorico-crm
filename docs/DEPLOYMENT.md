@@ -1,5 +1,13 @@
 # Deployment - Meteorico CRM
 
+## EasyPanel — CRM de follow-up
+
+O arquivo `docker-compose.easypanel.yml` instala o CRM, PostgreSQL e n8n dentro do projeto existente `Zap Grupos` sem reutilizar tabelas de outros sistemas. No painel, configure um domínio HTTPS para o serviço interno `web` na porta `8080` e outro domínio protegido para `n8n` na porta `5678`. Não publique a porta do PostgreSQL.
+
+Antes do primeiro deploy, gere valores independentes para `POSTGRES_PASSWORD`, `SESSION_SECRET`, `N8N_INTERNAL_TOKEN`, `N8N_ENCRYPTION_KEY` e `ADMIN_INITIAL_PASSWORD`. Depois do primeiro login, altere a senha no painel; o seed não a redefine em redeploys.
+
+A imagem de `n8n/Dockerfile` importa e publica automaticamente os quatro JSON de `n8n/workflows` com IDs estáveis. Confirme no editor que os quatro aparecem como publicados após a primeira subida. Mantenha `WHATSAPP_OUTBOUND_ENABLED=false` até o teste oficial autorizado estar concluído.
+
 ## Infraestrutura
 
 ### Servidor
@@ -189,6 +197,7 @@ volumes:
 | META_WHATSAPP_VERIFY_TOKEN   | Token aleatorio do desafio do webhook  | Sim (API)   |
 | META_APP_SECRET              | App Secret para assinatura do webhook  | Sim (API)   |
 | META_GRAPH_API_VERSION       | Versao fixada da Graph API             | Nao         |
+| META_APPROVED_TEMPLATE_NAMES | Templates aprovados, separados por virgula | Nao      |
 | WHATSAPP_STAGING_ALLOWLIST   | E.164 autorizados, separados por virgula | Sim (staging) |
 
 No EasyPanel de staging, configure a API com todos os itens Meta acima. No

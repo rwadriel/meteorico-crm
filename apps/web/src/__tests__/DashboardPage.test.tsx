@@ -36,7 +36,7 @@ describe('DashboardPage', () => {
     });
 
     expect(screen.getByText('Total de contatos').parentElement?.textContent).toContain('40');
-    expect(screen.getByText('Todas as campanhas').parentElement?.textContent).toContain('17');
+    expect(screen.getByText('Campanhas criadas').parentElement?.textContent).toContain('17');
     expect(globalThis.fetch).toHaveBeenCalledWith('/api/analytics/dashboard', {
       credentials: 'include',
     });
@@ -48,17 +48,17 @@ describe('DashboardPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Total de contatos').parentElement?.textContent).toContain('0');
-      expect(screen.getByText('Todas as campanhas').parentElement?.textContent).toContain('0');
+      expect(screen.getByText('Campanhas criadas').parentElement?.textContent).toContain('0');
     });
   });
 
-  it('renders unresolved history and needs review separately', async () => {
-    mockDashboard(7284, 17, 43, 43);
+  it('keeps the follow-up audience empty when the optional response is unavailable', async () => {
+    mockDashboard(7284, 17);
     render(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('Historico nao resolvido').parentElement?.textContent).toContain('43');
-      expect(screen.getByText('Em revisao').parentElement?.textContent).toContain('43');
+      expect(screen.getByText('Elegíveis para follow-up').parentElement?.textContent).toContain('0');
+      expect(screen.getByText('Campanhas criadas').parentElement?.textContent).toContain('17');
     });
   });
 });
