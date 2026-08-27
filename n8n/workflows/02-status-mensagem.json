@@ -14,11 +14,12 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.METEORICO_API_INTERNAL_URL + '/internal/followup/campaigns/' + $json.body.campaign_id + '/refresh'}}",
-        "sendHeaders": true,
-        "headerParameters": { "parameters": [{ "name": "X-Internal-Token", "value": "={{$env.N8N_INTERNAL_TOKEN}}" }] },
+        "url": "={{'http://api:4080/internal/followup/campaigns/' + $json.body.campaign_id + '/refresh'}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "options": {}
       },
+      "credentials": { "httpHeaderAuth": { "id": "meteoricoInternalApi", "name": "Meteorico Internal API" } },
       "id": "refresh-metrics",
       "name": "Atualizar métricas",
       "type": "n8n-nodes-base.httpRequest",

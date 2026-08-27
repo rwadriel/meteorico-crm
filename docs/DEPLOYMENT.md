@@ -6,6 +6,10 @@ O arquivo `docker-compose.easypanel.yml` instala o CRM, PostgreSQL e n8n dentro 
 
 Antes do primeiro deploy, gere valores independentes para `POSTGRES_PASSWORD`, `SESSION_SECRET`, `N8N_INTERNAL_TOKEN`, `N8N_ENCRYPTION_KEY` e `ADMIN_INITIAL_PASSWORD`. Depois do primeiro login, altere a senha no painel; o seed não a redefine em redeploys.
 
+O bootstrap importa `N8N_INTERNAL_TOKEN` como uma credencial `HTTP Header Auth`
+criptografada pelo n8n. Os workflows referenciam somente o ID dessa credencial;
+o acesso generico de nodes a variaveis do container permanece bloqueado.
+
 A imagem de `n8n/Dockerfile` importa e publica automaticamente os quatro JSON de `n8n/workflows` com IDs estáveis. Confirme no editor que os quatro aparecem como publicados após a primeira subida. Mantenha `WHATSAPP_OUTBOUND_ENABLED=false` até o teste oficial autorizado estar concluído.
 
 ## Infraestrutura
