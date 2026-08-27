@@ -1,4 +1,4 @@
-FROM docker.n8n.io/n8nio/n8n:2.21.0
+FROM n8nio/n8n:2.21.0
 
 USER root
 COPY n8n/workflows /opt/meteorico/workflows
