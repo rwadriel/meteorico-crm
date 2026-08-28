@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@meteorico/database';
+import { OutboundBlockedError, assertStagingRecipientAllowed } from '@meteorico/shared';
 
 export const FOLLOWUP_TEMPLATES = [
   {
@@ -343,6 +344,12 @@ async function sendTemplateMessage(input: {
   const graphVersion = process.env.META_GRAPH_API_VERSION ?? 'v25.0';
   if (!token || !phoneNumberId) throw new Error('Meta Cloud API não configurada');
 
+  const recipient = assertStagingRecipientAllowed(
+    input.to,
+    process.env.DEPLOYMENT_ENV ?? 'development',
+    process.env.WHATSAPP_STAGING_ALLOWLIST,
+  );
+
   const components = input.offerUrl
     ? [{ type: 'body', parameters: [{ type: 'text', text: input.offerUrl }] }]
     : undefined;
@@ -352,7 +359,7 @@ async function sendTemplateMessage(input: {
     body: JSON.stringify({
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
-      to: input.to,
+      to: recipient,
       type: 'template',
       template: { name: input.templateName, language: { code: input.language }, ...(components ? { components } : {}) },
     }),
@@ -373,6 +380,14 @@ class MetaSendError extends Error {
 }
 
 function classifySendError(error: unknown, attempts: number) {
+  if (error instanceof OutboundBlockedError) {
+    return {
+      status: 'skipped',
+      errorCode: 'staging_allowlist',
+      errorMessage: 'Contato fora da lista autorizada para staging',
+    };
+  }
+
   const transient = error instanceof MetaSendError && (error.httpStatus === 429 || error.httpStatus >= 500);
   if (transient && attempts < 3) {
     return {
