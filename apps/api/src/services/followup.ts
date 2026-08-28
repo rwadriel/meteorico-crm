@@ -344,10 +344,14 @@ async function sendTemplateMessage(input: {
   const graphVersion = process.env.META_GRAPH_API_VERSION ?? 'v25.0';
   if (!token || !phoneNumberId) throw new Error('Meta Cloud API não configurada');
 
+  const stagingAllowlist = process.env.WHATSAPP_STAGING_ALLOWLIST;
+  const safetyEnvironment = stagingAllowlist?.trim()
+    ? 'staging'
+    : (process.env.DEPLOYMENT_ENV ?? 'development');
   const recipient = assertStagingRecipientAllowed(
     input.to,
-    process.env.DEPLOYMENT_ENV ?? 'development',
-    process.env.WHATSAPP_STAGING_ALLOWLIST,
+    safetyEnvironment,
+    stagingAllowlist,
   );
 
   const components = input.offerUrl
