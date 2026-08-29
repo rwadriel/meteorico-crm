@@ -214,7 +214,10 @@ export async function getCampaignPreflight(
 ) {
   const cooldownDays = Math.max(0, input.cooldownDays ?? 7);
   const cutoff = new Date(Date.now() - cooldownDays * 86_400_000);
-  const allowlist = process.env.WHATSAPP_STAGING_ALLOWLIST?.trim();
+  const allowlist =
+    (process.env.DEPLOYMENT_ENV ?? 'development').toLowerCase() === 'staging'
+      ? process.env.WHATSAPP_STAGING_ALLOWLIST?.trim()
+      : undefined;
   const allowedPhones = allowlist ? parseStagingAllowlist(allowlist) : null;
   const contacts = await db.contact.findMany({
     where: { listMemberships: { some: { listId: input.audienceListId } } },
@@ -561,7 +564,10 @@ function eligibleContactWhere(
   templateName?: string,
   cooldownDays = 0,
 ): Prisma.ContactWhereInput {
-  const stagingAllowlist = process.env.WHATSAPP_STAGING_ALLOWLIST?.trim();
+  const stagingAllowlist =
+    (process.env.DEPLOYMENT_ENV ?? 'development').toLowerCase() === 'staging'
+      ? process.env.WHATSAPP_STAGING_ALLOWLIST?.trim()
+      : undefined;
   const allowedPhones = stagingAllowlist ? [...parseStagingAllowlist(stagingAllowlist)] : null;
 
   const cooldownFilter: Prisma.ContactWhereInput =
@@ -610,9 +616,7 @@ async function sendTemplateMessage(input: {
   if (!token || !phoneNumberId) throw new Error('Meta Cloud API não configurada');
 
   const stagingAllowlist = process.env.WHATSAPP_STAGING_ALLOWLIST;
-  const safetyEnvironment = stagingAllowlist?.trim()
-    ? 'staging'
-    : (process.env.DEPLOYMENT_ENV ?? 'development');
+  const safetyEnvironment = process.env.DEPLOYMENT_ENV ?? 'development';
   const recipient = assertStagingRecipientAllowed(input.to, safetyEnvironment, stagingAllowlist);
 
   const components =
