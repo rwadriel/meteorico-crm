@@ -306,6 +306,10 @@ export async function syncMetaTemplates(db: PrismaClient, createdBy: string) {
   const records = await fetchAllMetaTemplates();
   let created = 0;
   let updated = 0;
+  let archived = 0;
+  const remoteTemplateIds = new Set(
+    records.map((record) => record.id).filter((id): id is string => Boolean(id)),
+  );
 
   for (const record of records) {
     if (!record.id || !record.name || !record.language) continue;
@@ -392,7 +396,39 @@ export async function syncMetaTemplates(db: PrismaClient, createdBy: string) {
     updated += 1;
   }
 
-  return { total: records.length, created, updated };
+  const missing = await db.messageTemplate.findMany({
+    where: {
+      isActive: true,
+      metaTemplateId: { not: null },
+      ...(remoteTemplateIds.size > 0 ? { metaTemplateId: { notIn: [...remoteTemplateIds] } } : {}),
+    },
+    select: { id: true },
+  });
+  if (missing.length > 0) {
+    const result = await db.messageTemplate.updateMany({
+      where: { id: { in: missing.map((template) => template.id) } },
+      data: { isActive: false, metaStatus: 'DELETED', metaSyncedAt: new Date() },
+    });
+    archived = result.count;
+  }
+
+  return { total: records.length, created, updated, archived };
+}
+
+export async function deleteMetaTemplate(db: PrismaClient, templateId: string) {
+  const template = await db.messageTemplate.findUnique({ where: { id: templateId } });
+  if (!template || !template.isActive) {
+    throw new MetaTemplateError('Template não encontrado.', 404);
+  }
+  if (template.metaTemplateId) {
+    await metaRequest(`/message_templates?name=${encodeURIComponent(template.name)}`, {
+      method: 'DELETE',
+    });
+  }
+  return db.messageTemplate.update({
+    where: { id: template.id },
+    data: { isActive: false, metaStatus: 'DELETED', metaSyncedAt: new Date() },
+  });
 }
 
 export async function listManagedMetaTemplates(db: PrismaClient) {

@@ -3,7 +3,12 @@
   "id": "meteoricoWaSend",
   "nodes": [
     {
-      "parameters": { "httpMethod": "POST", "path": "meteorico-campaign", "responseMode": "onReceived", "options": {} },
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "meteorico-campaign",
+        "responseMode": "onReceived",
+        "options": {}
+      },
       "id": "campaign-webhook",
       "name": "Receber campanha",
       "type": "n8n-nodes-base.webhook",
@@ -23,7 +28,9 @@
         "body": "={\"batchSize\":10}",
         "options": { "timeout": 120000 }
       },
-      "credentials": { "httpHeaderAuth": { "id": "meteoricoInternalApi", "name": "Meteorico Internal API" } },
+      "credentials": {
+        "httpHeaderAuth": { "id": "meteoricoInternalApi", "name": "Meteorico Internal API" }
+      },
       "id": "process-batch",
       "name": "Processar lote controlado",
       "type": "n8n-nodes-base.httpRequest",
@@ -31,7 +38,20 @@
       "position": [260, 0]
     },
     {
-      "parameters": { "conditions": { "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" }, "conditions": [{ "leftValue": "={{$json.remaining}}", "rightValue": 0, "operator": { "type": "number", "operation": "gt" } }], "combinator": "and" }, "options": {} },
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{$json.remaining}}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
       "id": "has-more",
       "name": "Ainda há mensagens?",
       "type": "n8n-nodes-base.if",
@@ -39,7 +59,7 @@
       "position": [520, 0]
     },
     {
-      "parameters": { "amount": 2 },
+      "parameters": { "amount": "={{$json.waitSeconds || 60}}" },
       "id": "wait",
       "name": "Aguardar entre lotes",
       "type": "n8n-nodes-base.wait",
@@ -49,13 +69,25 @@
     }
   ],
   "connections": {
-    "Receber campanha": { "main": [[{ "node": "Processar lote controlado", "type": "main", "index": 0 }]] },
-    "Processar lote controlado": { "main": [[{ "node": "Ainda há mensagens?", "type": "main", "index": 0 }]] },
-    "Ainda há mensagens?": { "main": [[{ "node": "Aguardar entre lotes", "type": "main", "index": 0 }], []] },
-    "Aguardar entre lotes": { "main": [[{ "node": "Processar lote controlado", "type": "main", "index": 0 }]] }
+    "Receber campanha": {
+      "main": [[{ "node": "Processar lote controlado", "type": "main", "index": 0 }]]
+    },
+    "Processar lote controlado": {
+      "main": [[{ "node": "Ainda há mensagens?", "type": "main", "index": 0 }]]
+    },
+    "Ainda há mensagens?": {
+      "main": [[{ "node": "Aguardar entre lotes", "type": "main", "index": 0 }], []]
+    },
+    "Aguardar entre lotes": {
+      "main": [[{ "node": "Processar lote controlado", "type": "main", "index": 0 }]]
+    }
   },
   "active": true,
-  "settings": { "executionOrder": "v1", "saveDataErrorExecution": "all", "saveDataSuccessExecution": "none" },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none"
+  },
   "versionId": "00000000-0000-4000-8000-000000000001",
   "meta": { "templateCredsSetupCompleted": false },
   "tags": []

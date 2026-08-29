@@ -180,7 +180,13 @@ export async function getAudienceStats(db: PrismaClient, audienceListId?: string
       where: {
         AND: [
           scope,
-          { OR: [{ isStudent: true }, { totalPurchases: { gt: 0 } }, { purchaseStatus: 'purchased' }] },
+          {
+            OR: [
+              { isStudent: true },
+              { totalPurchases: { gt: 0 } },
+              { purchaseStatus: 'purchased' },
+            ],
+          },
         ],
       },
     }),
@@ -202,6 +208,73 @@ export async function getAudienceStats(db: PrismaClient, audienceListId?: string
   };
 }
 
+export async function getCampaignPreflight(
+  db: PrismaClient,
+  input: { audienceListId: string; templateName: string; cooldownDays?: number },
+) {
+  const cooldownDays = Math.max(0, input.cooldownDays ?? 7);
+  const cutoff = new Date(Date.now() - cooldownDays * 86_400_000);
+  const allowlist = process.env.WHATSAPP_STAGING_ALLOWLIST?.trim();
+  const allowedPhones = allowlist ? parseStagingAllowlist(allowlist) : null;
+  const contacts = await db.contact.findMany({
+    where: { listMemberships: { some: { listId: input.audienceListId } } },
+    select: {
+      id: true,
+      name: true,
+      normalizedPhone: true,
+      isStudent: true,
+      totalPurchases: true,
+      purchaseStatus: true,
+      preferences: { where: { channel: 'whatsapp' }, take: 1 },
+      followupMessages: {
+        where: {
+          campaign: { templateName: input.templateName },
+          status: { in: ['submitted', 'sent', 'delivered', 'read'] },
+          submittedAt: { gte: cutoff },
+        },
+        select: { id: true },
+        take: 1,
+      },
+    },
+  });
+  const exclusions = { invalidPhone: 0, buyer: 0, optOut: 0, recentDuplicate: 0 };
+  let consentMissing = 0;
+  const eligible: Array<{ id: string; name: string; phone: string }> = [];
+  for (const contact of contacts) {
+    const preference = contact.preferences?.[0];
+    const phoneAllowed =
+      Boolean(contact.normalizedPhone) &&
+      (!allowedPhones || allowedPhones.has(contact.normalizedPhone!));
+    if (!phoneAllowed) exclusions.invalidPhone += 1;
+    else if (
+      contact.isStudent ||
+      contact.totalPurchases > 0 ||
+      contact.purchaseStatus === 'purchased'
+    )
+      exclusions.buyer += 1;
+    else if (preference?.optedOut) exclusions.optOut += 1;
+    else if (cooldownDays > 0 && (contact.followupMessages?.length ?? 0) > 0)
+      exclusions.recentDuplicate += 1;
+    else {
+      if (!preference?.optedInAt) consentMissing += 1;
+      eligible.push({
+        id: contact.id,
+        name: contact.name,
+        phone: maskPhone(contact.normalizedPhone!),
+      });
+    }
+  }
+  return {
+    total: contacts.length,
+    eligible: eligible.length,
+    excluded: contacts.length - eligible.length,
+    exclusions,
+    consentMissing,
+    cooldownDays,
+    sample: eligible.slice(0, 5),
+  };
+}
+
 export async function prepareFollowupCampaign(db: PrismaClient, campaignId: string) {
   const campaign = await db.followupCampaign.findUnique({ where: { id: campaignId } });
   if (!campaign) throw new Error('Campanha não encontrada');
@@ -212,7 +285,11 @@ export async function prepareFollowupCampaign(db: PrismaClient, campaignId: stri
   const [stats, contacts] = await Promise.all([
     getAudienceStats(db, campaign.audienceListId),
     db.contact.findMany({
-      where: eligibleContactWhere(campaign.audienceListId),
+      where: eligibleContactWhere(
+        campaign.audienceListId,
+        campaign.templateName,
+        campaign.cooldownDays,
+      ),
       select: { id: true },
     }),
   ]);
@@ -232,7 +309,7 @@ export async function prepareFollowupCampaign(db: PrismaClient, campaignId: stri
     where: { id: campaignId },
     data: {
       totalContacts: stats.total,
-      eligibleContacts: stats.eligible,
+      eligibleContacts: contacts.length,
       queuedCount,
       status: campaign.status === 'paused' ? 'paused' : 'ready',
     },
@@ -250,6 +327,7 @@ export async function processFollowupBatch(db: PrismaClient, campaignId: string,
   }
 
   const now = new Date();
+  const effectiveBatchSize = Math.max(1, Math.min(campaign.batchSize || batchSize, 25));
   const candidates = await db.followupCampaignMessage.findMany({
     where: {
       campaignId,
@@ -257,7 +335,7 @@ export async function processFollowupBatch(db: PrismaClient, campaignId: string,
       OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
     },
     orderBy: { createdAt: 'asc' },
-    take: Math.max(1, Math.min(batchSize, 25)),
+    take: effectiveBatchSize,
     include: {
       contact: {
         include: { preferences: { where: { channel: 'whatsapp' }, take: 1 } },
@@ -332,7 +410,14 @@ export async function processFollowupBatch(db: PrismaClient, campaignId: string,
     });
   }
 
-  return { campaignId, processed, remaining, status: remaining === 0 ? 'completed' : 'running' };
+  return {
+    campaignId,
+    processed,
+    remaining,
+    status: remaining === 0 ? 'completed' : 'running',
+    waitSeconds: campaign.batchIntervalSeconds,
+    batchSize: effectiveBatchSize,
+  };
 }
 
 export async function handleFollowupDeliveryStatus(
@@ -471,20 +556,42 @@ export async function refreshFollowupCampaignMetrics(db: PrismaClient, campaignI
   });
 }
 
-function eligibleContactWhere(audienceListId?: string | null): Prisma.ContactWhereInput {
+function eligibleContactWhere(
+  audienceListId?: string | null,
+  templateName?: string,
+  cooldownDays = 0,
+): Prisma.ContactWhereInput {
   const stagingAllowlist = process.env.WHATSAPP_STAGING_ALLOWLIST?.trim();
   const allowedPhones = stagingAllowlist ? [...parseStagingAllowlist(stagingAllowlist)] : null;
 
+  const cooldownFilter: Prisma.ContactWhereInput =
+    templateName && cooldownDays > 0
+      ? {
+          NOT: {
+            followupMessages: {
+              some: {
+                campaign: { templateName },
+                status: { in: ['submitted', 'sent', 'delivered', 'read'] },
+                submittedAt: { gte: new Date(Date.now() - cooldownDays * 86_400_000) },
+              },
+            },
+          },
+        }
+      : {};
+
   return {
-    ...(audienceListId
-      ? { listMemberships: { some: { listId: audienceListId } } }
-      : {}),
+    ...(audienceListId ? { listMemberships: { some: { listId: audienceListId } } } : {}),
     normalizedPhone: allowedPhones ? { in: allowedPhones } : { not: null },
     isStudent: false,
     totalPurchases: 0,
     purchaseStatus: { not: 'purchased' },
     NOT: { preferences: { some: { channel: 'whatsapp', optedOut: true } } },
+    AND: [cooldownFilter],
   };
+}
+
+function maskPhone(phone: string): string {
+  return phone.length < 8 ? '***' : `${phone.slice(0, 4)}***${phone.slice(-2)}`;
 }
 
 async function sendTemplateMessage(input: {

@@ -27,6 +27,7 @@ import { analyticsRoutes } from './routes/analytics.js';
 import { eduzzWebhookRoutes } from './routes/eduzz-webhook.js';
 import { queueRoutes } from './routes/queues.js';
 import { contactRoutes } from './routes/contacts.js';
+import { contactListRoutes } from './routes/contact-lists.js';
 import { auditRoutes } from './routes/audit-logs.js';
 import { settingsRoutes } from './routes/settings.js';
 import { metaVerifyRoutes } from './routes/meta-verify.js';
@@ -99,6 +100,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(campaignRoutes);
   await app.register(groupRoutes);
   await app.register(contactRoutes);
+  await app.register(contactListRoutes);
   await app.register(importRoutes);
   await app.register(integrationRoutes);
   await app.register(messagingRoutes);

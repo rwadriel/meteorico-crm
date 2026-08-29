@@ -11,6 +11,7 @@ import {
   LogOut,
   ChevronRight,
   FileText,
+  ListFilter,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.js';
 import { useCanAccess } from '../hooks/usePermission.js';
@@ -18,6 +19,7 @@ import { useCanAccess } from '../hooks/usePermission.js';
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, section: 'dashboard' },
   { to: '/contacts', label: 'Contatos', icon: Users, section: 'contacts' },
+  { to: '/audiences', label: 'Públicos', icon: ListFilter, section: 'contacts' },
   { to: '/imports', label: 'Importar CSV', icon: Upload, section: 'imports' },
   { to: '/followup', label: 'Campanhas', icon: Megaphone, section: 'campaigns' },
   { to: '/templates', label: 'Templates', icon: FileText, section: 'templates' },
@@ -110,7 +112,7 @@ export function AdminLayout(): React.ReactElement {
           </button>
           <Breadcrumbs />
           <div className="topbar-right">
-            <span className="topbar-version">v0.4.0</span>
+            <span className="topbar-version">v0.5.0</span>
           </div>
         </header>
 

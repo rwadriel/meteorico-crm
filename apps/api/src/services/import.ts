@@ -245,7 +245,11 @@ function getField(fields: string[], columnMap: Map<string, number>, key: string)
 
 // ─── CSV Parsers ─────────────────────────────────────────────────────
 
-export function parseContactsCsv(content: string): { rows: ParsedContactRow[]; errors: ParseError[]; headerErrors?: string[] } {
+export function parseContactsCsv(content: string): {
+  rows: ParsedContactRow[];
+  errors: ParseError[];
+  headerErrors?: string[];
+} {
   const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
   const rows: ParsedContactRow[] = [];
   const errors: ParseError[] = [];
@@ -256,7 +260,11 @@ export function parseContactsCsv(content: string): { rows: ParsedContactRow[]; e
 
   const delimiter = detectDelimiter(lines[0]);
   const headerFields = parseCsvLine(lines[0], delimiter);
-  const { columnMap, errors: headerErrors } = mapHeaders(headerFields, CONTACT_HEADER_MAP, CONTACT_REQUIRED_HEADERS);
+  const { columnMap, errors: headerErrors } = mapHeaders(
+    headerFields,
+    CONTACT_HEADER_MAP,
+    CONTACT_REQUIRED_HEADERS,
+  );
 
   if (headerErrors.length > 0) {
     return { rows, errors, headerErrors };
@@ -318,7 +326,9 @@ export function parseContactsCsv(content: string): { rows: ParsedContactRow[]; e
       lastEdition = parsed;
     }
 
-    const purchaseStatus = ['sim', 'yes', 'true', '1', 'comprou', 'purchased', 'cliente'].includes(rawPurchase)
+    const purchaseStatus = ['sim', 'yes', 'true', '1', 'comprou', 'purchased', 'cliente'].includes(
+      rawPurchase,
+    )
       ? 'purchased'
       : ['nao', 'no', 'false', '0', 'nao comprou', 'not purchased'].includes(rawPurchase)
         ? 'not_purchased'
@@ -345,7 +355,11 @@ export function parseContactsCsv(content: string): { rows: ParsedContactRow[]; e
   return { rows, errors };
 }
 
-export function parseParticipationsCsv(content: string): { rows: ParsedParticipationRow[]; errors: ParseError[]; headerErrors?: string[] } {
+export function parseParticipationsCsv(content: string): {
+  rows: ParsedParticipationRow[];
+  errors: ParseError[];
+  headerErrors?: string[];
+} {
   const lines = content.split(/\r?\n/).filter((l) => l.trim().length > 0);
   const rows: ParsedParticipationRow[] = [];
   const errors: ParseError[] = [];
@@ -356,7 +370,11 @@ export function parseParticipationsCsv(content: string): { rows: ParsedParticipa
 
   const delimiter = detectDelimiter(lines[0]);
   const headerFields = parseCsvLine(lines[0], delimiter);
-  const { columnMap, errors: headerErrors } = mapHeaders(headerFields, PARTICIPATION_HEADER_MAP, PARTICIPATION_REQUIRED_HEADERS);
+  const { columnMap, errors: headerErrors } = mapHeaders(
+    headerFields,
+    PARTICIPATION_HEADER_MAP,
+    PARTICIPATION_REQUIRED_HEADERS,
+  );
 
   if (headerErrors.length > 0) {
     return { rows, errors, headerErrors };
@@ -419,6 +437,8 @@ export async function createImportPreview(
   content: string,
   userId: string,
   audienceName?: string,
+  consentSource?: string,
+  consentAt?: Date,
 ) {
   let parsedRows: (ParsedContactRow | ParsedParticipationRow)[];
   let parseErrors: ParseError[];
@@ -453,7 +473,7 @@ export async function createImportPreview(
     historicalCampaignsToCreate: 0,
     participationsToCreate: 0,
     duplicatesInFile: 0,
-    invalidPhones: parseErrors.filter(e => e.field === 'telefone').length,
+    invalidPhones: parseErrors.filter((e) => e.field === 'telefone').length,
     divergences: [],
     warnings: [],
   };
@@ -475,7 +495,7 @@ export async function createImportPreview(
       where: { phone: { in: uniquePhones } },
       select: { phone: true, totalParticipations: true },
     });
-    const existingPhoneSet = new Set(existingContacts.map(c => c.phone!));
+    const existingPhoneSet = new Set(existingContacts.map((c) => c.phone!));
 
     for (const phone of uniquePhones) {
       if (existingPhoneSet.has(phone)) {
@@ -507,7 +527,7 @@ export async function createImportPreview(
       where: { phone: { in: uniquePhones } },
       select: { phone: true },
     });
-    const existingPhoneSet = new Set(existingContacts.map(c => c.phone!));
+    const existingPhoneSet = new Set(existingContacts.map((c) => c.phone!));
 
     for (const phone of uniquePhones) {
       if (existingPhoneSet.has(phone)) {
@@ -521,7 +541,7 @@ export async function createImportPreview(
       where: { editionNumber: { in: [...campaignNumbers] } },
       select: { editionNumber: true },
     });
-    const existingEditions = new Set(existingCampaigns.map(c => c.editionNumber));
+    const existingEditions = new Set(existingCampaigns.map((c) => c.editionNumber));
     for (const num of campaignNumbers) {
       if (!existingEditions.has(num)) {
         stats.historicalCampaignsToCreate++;
@@ -540,6 +560,8 @@ export async function createImportPreview(
         type === 'contacts'
           ? audienceName?.trim() || filename.replace(/\.[^.]+$/, '') || 'Lista de contatos'
           : null,
+      consentSource: type === 'contacts' ? consentSource?.trim() || null : null,
+      consentAt: type === 'contacts' && consentSource ? (consentAt ?? new Date()) : null,
       totalRows: parsedRows.length + parseErrors.length,
       processedRows: 0,
       errorRows: parseErrors.length,
@@ -654,35 +676,37 @@ export async function processContactsImport(db: PrismaClient, importId: string) 
           if (data.origin) metadata.origem = data.origin;
           if (data.product) metadata.produto = data.product;
           if (data.lastEdition !== null) metadata.ultima_edicao_csv = String(data.lastEdition);
-          if (data.totalParticipations > 0) metadata.quantidade_participacoes_csv = String(data.totalParticipations);
+          if (data.totalParticipations > 0)
+            metadata.quantidade_participacoes_csv = String(data.totalParticipations);
 
           const hasMetadata = Object.keys(metadata).length > 0;
           const existingMeta = existing?.metadata as Record<string, unknown> | null;
           const mergedMetadata = existingMeta
             ? { ...existingMeta, ...metadata }
-            : hasMetadata ? metadata : null;
+            : hasMetadata
+              ? metadata
+              : null;
 
           // aluno=true never downgraded
-          const isStudent = data.isStudent || data.purchaseStatus === 'purchased'
-            ? true
-            : (existing?.isStudent ?? false);
-          const purchaseStatus = existing?.purchaseStatus === 'purchased'
-            ? 'purchased'
-            : data.purchaseStatus;
+          const isStudent =
+            data.isStudent || data.purchaseStatus === 'purchased'
+              ? true
+              : (existing?.isStudent ?? false);
+          const purchaseStatus =
+            existing?.purchaseStatus === 'purchased' ? 'purchased' : data.purchaseStatus;
 
           const resolvedName = data.name || (existing?.name ?? '');
 
           // CSV totalParticipations is stored as legacy audit in metadata;
           // the Contact.totalParticipations field holds whatever was there
           // or the CSV value if no participations exist yet
-          const resolvedParticipations = data.totalParticipations > 0
-            ? data.totalParticipations
-            : (existing?.totalParticipations ?? 0);
+          const resolvedParticipations =
+            data.totalParticipations > 0
+              ? data.totalParticipations
+              : (existing?.totalParticipations ?? 0);
 
           // email: persist to Contact.email column, not metadata
-          const resolvedEmail = data.email
-            ? data.email
-            : (existing?.email ?? null);
+          const resolvedEmail = data.email ? data.email : (existing?.email ?? null);
 
           let firstSeenAt: Date | undefined;
           if (data.firstContactDate) {
@@ -696,9 +720,8 @@ export async function processContactsImport(db: PrismaClient, importId: string) 
             if (!isNaN(parsed.getTime())) lastSeenAt = parsed;
           }
 
-          const metaValue = mergedMetadata !== null
-            ? (mergedMetadata as Prisma.InputJsonValue)
-            : undefined;
+          const metaValue =
+            mergedMetadata !== null ? (mergedMetadata as Prisma.InputJsonValue) : undefined;
 
           const contactData = {
             name: resolvedName,
@@ -729,6 +752,25 @@ export async function processContactsImport(db: PrismaClient, importId: string) 
             create: { listId: audience.id, contactId: result.id },
             update: {},
           });
+
+          if (imp.consentSource) {
+            await tx.contactPreference.upsert({
+              where: { contactId_channel: { contactId: result.id, channel: 'whatsapp' } },
+              create: {
+                contactId: result.id,
+                channel: 'whatsapp',
+                optedOut: false,
+                optedInAt: imp.consentAt ?? imp.createdAt,
+                optInSource: imp.consentSource,
+                optInCategories: ['MARKETING', 'UTILITY'],
+              },
+              update: {
+                optedInAt: imp.consentAt ?? imp.createdAt,
+                optInSource: imp.consentSource,
+                optInCategories: ['MARKETING', 'UTILITY'],
+              },
+            });
+          }
 
           const afterState: Record<string, unknown> = {
             name: result.name,
@@ -831,9 +873,7 @@ export async function processParticipationsImport(db: PrismaClient, importId: st
               normalizedPhone: data.phone,
               isStudent: data.isCurrentStudent,
             },
-            update: data.isCurrentStudent
-              ? { isStudent: true }
-              : {},
+            update: data.isCurrentStudent ? { isStudent: true } : {},
           });
 
           const existingCampaign = await tx.campaign.findUnique({
@@ -866,7 +906,9 @@ export async function processParticipationsImport(db: PrismaClient, importId: st
             },
           });
 
-          const participationAction: 'create' | 'update' = existingParticipation ? 'update' : 'create';
+          const participationAction: 'create' | 'update' = existingParticipation
+            ? 'update'
+            : 'create';
 
           const participationBeforeState: Record<string, unknown> | null = existingParticipation
             ? {
@@ -883,12 +925,18 @@ export async function processParticipationsImport(db: PrismaClient, importId: st
 
           const hasParticipationMeta = Object.keys(participationMetadata).length > 0;
           const mergedParticipationMeta = existingParticipation?.metadata
-            ? { ...(existingParticipation.metadata as Record<string, unknown>), ...participationMetadata }
-            : hasParticipationMeta ? participationMetadata : null;
+            ? {
+                ...(existingParticipation.metadata as Record<string, unknown>),
+                ...participationMetadata,
+              }
+            : hasParticipationMeta
+              ? participationMetadata
+              : null;
 
-          const partMetaValue = mergedParticipationMeta !== null
-            ? (mergedParticipationMeta as Prisma.InputJsonValue)
-            : undefined;
+          const partMetaValue =
+            mergedParticipationMeta !== null
+              ? (mergedParticipationMeta as Prisma.InputJsonValue)
+              : undefined;
 
           const participation = await tx.campaignParticipation.upsert({
             where: {
@@ -955,7 +1003,10 @@ export async function processParticipationsImport(db: PrismaClient, importId: st
 
 // ─── Divergence Report ───────────────────────────────────────────────
 
-export async function generateDivergenceReport(db: PrismaClient, importId: string): Promise<Divergence[]> {
+export async function generateDivergenceReport(
+  db: PrismaClient,
+  importId: string,
+): Promise<Divergence[]> {
   const imp = await db.import.findUnique({ where: { id: importId } });
   if (!imp || imp.status !== 'done') return [];
 
@@ -988,14 +1039,15 @@ export async function generateDivergenceReport(db: PrismaClient, importId: strin
           type: 'LEGACY_PARTICIPATION_COUNT_MISMATCH',
           csvValue: csvParticipations,
           calculatedValue: confirmedParticipations,
-          action: 'Valor legado preservado em metadata; fonte de verdade: campanhas confirmadas no banco',
+          action:
+            'Valor legado preservado em metadata; fonte de verdade: campanhas confirmadas no banco',
         });
       }
 
       if (csvLastEdition !== null && contact.participations.length > 0) {
         const maxEdition = Math.max(
           ...contact.participations
-            .map(p => p.campaign.editionNumber)
+            .map((p) => p.campaign.editionNumber)
             .filter((n): n is number => n !== null),
         );
         if (maxEdition > 0 && csvLastEdition !== maxEdition) {
@@ -1048,9 +1100,13 @@ export async function rollbackImport(db: PrismaClient, importId: string) {
               email: (beforeState.email as string | null) ?? null,
               isStudent: beforeState.isStudent as boolean,
               totalParticipations: beforeState.totalParticipations as number,
-              metadata: beforeState.metadata as Prisma.InputJsonValue ?? Prisma.JsonNull,
-              ...(beforeState.firstSeenAt ? { firstSeenAt: new Date(beforeState.firstSeenAt as string) } : {}),
-              ...(beforeState.lastSeenAt ? { lastSeenAt: new Date(beforeState.lastSeenAt as string) } : {}),
+              metadata: (beforeState.metadata as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+              ...(beforeState.firstSeenAt
+                ? { firstSeenAt: new Date(beforeState.firstSeenAt as string) }
+                : {}),
+              ...(beforeState.lastSeenAt
+                ? { lastSeenAt: new Date(beforeState.lastSeenAt as string) }
+                : {}),
             },
           });
         }
@@ -1068,7 +1124,10 @@ export async function rollbackImport(db: PrismaClient, importId: string) {
         const contactId = data._contactId as string;
         const campaignId = data._campaignId as string;
         const contactBeforeState = data._contactBeforeState as Record<string, unknown> | null;
-        const participationBeforeState = data._participationBeforeState as Record<string, unknown> | null;
+        const participationBeforeState = data._participationBeforeState as Record<
+          string,
+          unknown
+        > | null;
 
         if (participationAction === 'create') {
           await tx.campaignParticipation.deleteMany({
@@ -1076,14 +1135,17 @@ export async function rollbackImport(db: PrismaClient, importId: string) {
           });
         } else if (participationAction === 'update' && participationBeforeState) {
           const participationId = data._participationId as string;
-          await tx.campaignParticipation.update({
-            where: { id: participationId },
-            data: {
-              status: participationBeforeState.status as string,
-              classification: participationBeforeState.classification as string,
-              metadata: participationBeforeState.metadata as Prisma.InputJsonValue ?? Prisma.JsonNull,
-            },
-          }).catch(() => {});
+          await tx.campaignParticipation
+            .update({
+              where: { id: participationId },
+              data: {
+                status: participationBeforeState.status as string,
+                classification: participationBeforeState.classification as string,
+                metadata:
+                  (participationBeforeState.metadata as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+              },
+            })
+            .catch(() => {});
         }
 
         if (campaignAction === 'create') {
@@ -1103,16 +1165,18 @@ export async function rollbackImport(db: PrismaClient, importId: string) {
             await tx.contact.delete({ where: { id: contactId } }).catch(() => {});
           }
         } else if (contactAction === 'update' && contactBeforeState) {
-          await tx.contact.update({
-            where: { id: contactId },
-            data: {
-              name: contactBeforeState.name as string,
-              email: (contactBeforeState.email as string | null) ?? null,
-              isStudent: contactBeforeState.isStudent as boolean,
-              totalParticipations: contactBeforeState.totalParticipations as number,
-              metadata: contactBeforeState.metadata as Prisma.InputJsonValue ?? Prisma.JsonNull,
-            },
-          }).catch(() => {});
+          await tx.contact
+            .update({
+              where: { id: contactId },
+              data: {
+                name: contactBeforeState.name as string,
+                email: (contactBeforeState.email as string | null) ?? null,
+                isStudent: contactBeforeState.isStudent as boolean,
+                totalParticipations: contactBeforeState.totalParticipations as number,
+                metadata: (contactBeforeState.metadata as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+              },
+            })
+            .catch(() => {});
         }
       }
     }
@@ -1126,7 +1190,10 @@ export async function rollbackImport(db: PrismaClient, importId: string) {
 
 // ─── Reconcile participations (post-import) ──────────────────────────
 
-export async function reconcileParticipationCounts(db: PrismaClient, importId: string): Promise<Divergence[]> {
+export async function reconcileParticipationCounts(
+  db: PrismaClient,
+  importId: string,
+): Promise<Divergence[]> {
   const imp = await db.import.findUnique({ where: { id: importId } });
   if (!imp || imp.status !== 'done') return [];
 
@@ -1156,9 +1223,8 @@ export async function reconcileParticipationCounts(db: PrismaClient, importId: s
     const previousTotal = contact.totalParticipations;
     const meta = contact.metadata as Record<string, unknown> | null;
     const legacyValueRaw = meta?.quantidade_participacoes_csv;
-    const legacyValue = legacyValueRaw !== undefined && legacyValueRaw !== null
-      ? Number(legacyValueRaw)
-      : null;
+    const legacyValue =
+      legacyValueRaw !== undefined && legacyValueRaw !== null ? Number(legacyValueRaw) : null;
 
     if (previousTotal !== distinctCampaigns) {
       await db.contact.update({
@@ -1173,7 +1239,8 @@ export async function reconcileParticipationCounts(db: PrismaClient, importId: s
         type: 'LEGACY_PARTICIPATION_COUNT_MISMATCH',
         csvValue: legacyValue,
         calculatedValue: distinctCampaigns,
-        action: 'Valor legado preservado em metadata; campo derivado atualizado para campanhas distintas confirmadas',
+        action:
+          'Valor legado preservado em metadata; campo derivado atualizado para campanhas distintas confirmadas',
       });
     } else if (previousTotal !== distinctCampaigns) {
       divergences.push({
@@ -1186,7 +1253,7 @@ export async function reconcileParticipationCounts(db: PrismaClient, importId: s
     }
 
     const editions = contact.participations
-      .map(p => p.campaign.editionNumber)
+      .map((p) => p.campaign.editionNumber)
       .filter((n): n is number => n !== null);
 
     if (editions.length > 0) {
@@ -1226,10 +1293,7 @@ export async function getImport(db: PrismaClient, importId: string) {
   };
 }
 
-export async function listImports(
-  db: PrismaClient,
-  opts: { page: number; limit: number },
-) {
+export async function listImports(db: PrismaClient, opts: { page: number; limit: number }) {
   const [imports, total] = await Promise.all([
     db.import.findMany({
       orderBy: { createdAt: 'desc' },

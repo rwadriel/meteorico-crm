@@ -47,7 +47,20 @@ interface FollowupCampaign {
   repliedCount: number;
   optOutCount: number;
   createdAt: string;
+  scheduledAt: string | null;
+  batchSize: number;
+  batchIntervalSeconds: number;
+  cooldownDays: number;
   [key: string]: unknown;
+}
+
+interface Preflight {
+  total: number;
+  eligible: number;
+  excluded: number;
+  exclusions: { invalidPhone: number; buyer: number; optOut: number; recentDuplicate: number };
+  consentMissing: number;
+  sample: Array<{ id: string; name: string; phone: string }>;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -55,6 +68,8 @@ const STATUS_LABELS: Record<string, string> = {
   ready: 'Pronta',
   running: 'Em execução',
   paused: 'Pausada',
+  scheduled: 'Agendada',
+  cancelled: 'Cancelada',
   completed: 'Concluída',
   failed: 'Falhou',
 };
@@ -64,6 +79,8 @@ const STATUS_VARIANTS: Record<string, 'info' | 'success' | 'warning' | 'danger' 
   ready: 'info',
   running: 'success',
   paused: 'warning',
+  scheduled: 'warning',
+  cancelled: 'neutral',
   completed: 'info',
   failed: 'danger',
 };
@@ -83,14 +100,16 @@ export function FollowupCampaignsPage() {
   const [audienceListId, setAudienceListId] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmStart, setConfirmStart] = useState<FollowupCampaign | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState<FollowupCampaign | null>(null);
+  const [batchSize, setBatchSize] = useState(5);
+  const [batchIntervalSeconds, setBatchIntervalSeconds] = useState(60);
+  const [cooldownDays, setCooldownDays] = useState(7);
+  const [scheduledAt, setScheduledAt] = useState('');
+  const [preflight, setPreflight] = useState<Preflight | null>(null);
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.name === templateName),
     [templates, templateName],
-  );
-  const selectedAudience = useMemo(
-    () => audiences.find((item) => item.id === audienceListId),
-    [audiences, audienceListId],
   );
   const renderedPreview = selectedTemplate
     ? selectedTemplate.preview.replace(
@@ -105,13 +124,19 @@ export function FollowupCampaignsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [campaignResponse, templateResponse, audienceResponse, audiencesResponse] = await Promise.all([
-        fetch(`${API}/api/followup/campaigns?limit=100`, { credentials: 'include' }),
-        fetch(`${API}/api/followup/templates`, { credentials: 'include' }),
-        fetch(`${API}/api/followup/audience`, { credentials: 'include' }),
-        fetch(`${API}/api/followup/audiences`, { credentials: 'include' }),
-      ]);
-      if (!campaignResponse.ok || !templateResponse.ok || !audienceResponse.ok || !audiencesResponse.ok) {
+      const [campaignResponse, templateResponse, audienceResponse, audiencesResponse] =
+        await Promise.all([
+          fetch(`${API}/api/followup/campaigns?limit=100`, { credentials: 'include' }),
+          fetch(`${API}/api/followup/templates`, { credentials: 'include' }),
+          fetch(`${API}/api/followup/audience`, { credentials: 'include' }),
+          fetch(`${API}/api/followup/audiences`, { credentials: 'include' }),
+        ]);
+      if (
+        !campaignResponse.ok ||
+        !templateResponse.ok ||
+        !audienceResponse.ok ||
+        !audiencesResponse.ok
+      ) {
         throw new Error('Não foi possível carregar o módulo de follow-up');
       }
       const [campaignData, templateData, audienceData, audiencesData] = await Promise.all([
@@ -157,6 +182,21 @@ export function FollowupCampaignsPage() {
     const timer = window.setInterval(load, 5000);
     return () => window.clearInterval(timer);
   }, [campaigns, load]);
+  useEffect(() => {
+    if (!showCreate || !audienceListId || !templateName) return;
+    const timer = window.setTimeout(async () => {
+      const params = new URLSearchParams({
+        audienceListId,
+        templateName,
+        cooldownDays: String(cooldownDays),
+      });
+      const response = await fetch(`${API}/api/followup/preflight?${params}`, {
+        credentials: 'include',
+      });
+      if (response.ok) setPreflight((await response.json()) as Preflight);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [showCreate, audienceListId, templateName, cooldownDays]);
 
   async function createCampaign() {
     setSaving(true);
@@ -166,7 +206,16 @@ export function FollowupCampaignsPage() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, templateName, templateParameters, audienceListId }),
+        body: JSON.stringify({
+          name,
+          templateName,
+          templateParameters,
+          audienceListId,
+          batchSize,
+          batchIntervalSeconds,
+          cooldownDays,
+          scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : null,
+        }),
       });
       if (!response.ok) throw new Error(await responseMessage(response));
       setShowCreate(false);
@@ -183,7 +232,7 @@ export function FollowupCampaignsPage() {
 
   async function action(
     campaign: FollowupCampaign,
-    actionName: 'dry-run' | 'start' | 'pause' | 'resume',
+    actionName: 'dry-run' | 'start' | 'pause' | 'resume' | 'cancel',
   ) {
     setError('');
     setSuccess('');
@@ -201,10 +250,12 @@ export function FollowupCampaignsPage() {
       } else {
         setSuccess(
           actionName === 'start'
-            ? 'Campanha iniciada.'
+            ? 'Campanha iniciada ou agendada conforme a data escolhida.'
             : actionName === 'pause'
               ? 'Campanha pausada.'
-              : 'Campanha retomada.',
+              : actionName === 'resume'
+                ? 'Campanha retomada.'
+                : 'Campanha cancelada.',
         );
       }
       await load();
@@ -258,6 +309,11 @@ export function FollowupCampaignsPage() {
           {campaign.status === 'paused' && (
             <Button size="sm" onClick={() => action(campaign, 'resume')}>
               Continuar
+            </Button>
+          )}
+          {['draft', 'ready', 'scheduled', 'running', 'paused'].includes(campaign.status) && (
+            <Button size="sm" variant="danger" onClick={() => setConfirmCancel(campaign)}>
+              Cancelar
             </Button>
           )}
           <a
@@ -331,7 +387,11 @@ export function FollowupCampaignsPage() {
             <Button variant="secondary" onClick={() => setShowCreate(false)}>
               Cancelar
             </Button>
-            <Button loading={saving} onClick={createCampaign} disabled={!audienceListId || !name.trim()}>
+            <Button
+              loading={saving}
+              onClick={createCampaign}
+              disabled={!audienceListId || !name.trim()}
+            >
               Criar campanha
             </Button>
           </>
@@ -395,6 +455,41 @@ export function FollowupCampaignsPage() {
           />
         ))}
         <div
+          className="grid gap-4"
+          style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}
+        >
+          <Input
+            label="Mensagens por lote"
+            type="number"
+            min={1}
+            max={25}
+            value={batchSize}
+            onChange={(event) => setBatchSize(Number(event.target.value))}
+          />
+          <Input
+            label="Intervalo (segundos)"
+            type="number"
+            min={10}
+            max={300}
+            value={batchIntervalSeconds}
+            onChange={(event) => setBatchIntervalSeconds(Number(event.target.value))}
+          />
+          <Input
+            label="Não repetir por (dias)"
+            type="number"
+            min={0}
+            max={365}
+            value={cooldownDays}
+            onChange={(event) => setCooldownDays(Number(event.target.value))}
+          />
+        </div>
+        <Input
+          label="Agendar para (opcional)"
+          type="datetime-local"
+          value={scheduledAt}
+          onChange={(event) => setScheduledAt(event.target.value)}
+        />
+        <div
           className="card"
           style={{ marginTop: '1rem', whiteSpace: 'pre-wrap', background: 'var(--bg-secondary)' }}
         >
@@ -403,10 +498,28 @@ export function FollowupCampaignsPage() {
           </p>
           {renderedPreview}
         </div>
-        <p className="text-sm text-secondary" style={{ marginTop: '1rem' }}>
-          {selectedAudience?.eligible ?? 0} contatos elegíveis no público “{selectedAudience?.name ?? '—'}”.
-          Números repetidos recebem somente uma mensagem por campanha.
-        </p>
+        {preflight && (
+          <div className="card" style={{ marginTop: '1rem', background: 'var(--bg-secondary)' }}>
+            <strong>
+              Pré-envio: {preflight.eligible} de {preflight.total} receberão
+            </strong>
+            <p className="text-sm text-secondary" style={{ marginTop: '0.4rem' }}>
+              Excluídos: {preflight.exclusions.invalidPhone} inválidos, {preflight.exclusions.buyer}{' '}
+              compradores, {preflight.exclusions.optOut} opt-outs e{' '}
+              {preflight.exclusions.recentDuplicate} enviados recentemente.
+            </p>
+            {preflight.consentMissing > 0 && (
+              <p className="text-sm text-warning" style={{ marginTop: '0.4rem' }}>
+                {preflight.consentMissing} elegíveis sem origem de consentimento registrada.
+              </p>
+            )}
+            {preflight.sample.length > 0 && (
+              <p className="text-sm text-secondary" style={{ marginTop: '0.4rem' }}>
+                Amostra: {preflight.sample.map((item) => item.phone).join(', ')}
+              </p>
+            )}
+          </div>
+        )}
       </Modal>
 
       <ConfirmDialog
@@ -419,6 +532,18 @@ export function FollowupCampaignsPage() {
         title="Iniciar campanha real"
         message={`${confirmStart?.eligibleContacts || 0} contatos do público “${confirmStart?.audienceList?.name ?? 'selecionado'}” poderão receber este template. Confirme somente após executar o Modo Teste.`}
         confirmLabel="INICIAR CAMPANHA"
+      />
+      <ConfirmDialog
+        open={Boolean(confirmCancel)}
+        onCancel={() => setConfirmCancel(null)}
+        onConfirm={() => {
+          if (confirmCancel) action(confirmCancel, 'cancel');
+          setConfirmCancel(null);
+        }}
+        title="Cancelar campanha"
+        message="Os envios que ainda estiverem na fila serão cancelados. O histórico já enviado será preservado."
+        confirmLabel="Cancelar campanha"
+        variant="danger"
       />
     </div>
   );

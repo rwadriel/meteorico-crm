@@ -3,11 +3,22 @@ import { AuthProvider, useAuth } from './context/AuthContext.js';
 import { AdminLayout } from './layouts/AdminLayout.js';
 import { ProtectedRoute } from './components/ProtectedRoute.js';
 import {
-  LoginPage, DashboardPage, CampaignsPage, GroupsPage,
-  ContactsPage, MessagesPage, FlowsPage, AiPage,
-  TemplatesPage, IntegrationsPage, ImportsPage, AuditPage, SettingsPage,
+  LoginPage,
+  DashboardPage,
+  CampaignsPage,
+  GroupsPage,
+  ContactsPage,
+  MessagesPage,
+  FlowsPage,
+  AiPage,
+  TemplatesPage,
+  IntegrationsPage,
+  ImportsPage,
+  AuditPage,
+  SettingsPage,
   PrivacyPolicyPage,
   FollowupCampaignsPage,
+  AudiencesPage,
 } from './pages/index.js';
 
 function LoginGuard() {
@@ -49,6 +60,7 @@ export function App() {
             <Route path="followup" element={<FollowupCampaignsPage />} />
             <Route path="groups" element={<GroupsPage />} />
             <Route path="contacts" element={<ContactsPage />} />
+            <Route path="audiences" element={<AudiencesPage />} />
             <Route path="messages" element={<MessagesPage />} />
             <Route path="templates" element={<TemplatesPage />} />
             <Route path="flows" element={<FlowsPage />} />

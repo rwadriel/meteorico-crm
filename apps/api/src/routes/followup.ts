@@ -8,6 +8,7 @@ import {
   getAvailableFollowupTemplates,
   getAudienceLists,
   getAudienceStats,
+  getCampaignPreflight,
   prepareFollowupCampaign,
   processFollowupBatch,
   refreshFollowupCampaignMetrics,
@@ -20,12 +21,21 @@ const createSchema = z.object({
   offerUrl: z.string().trim().max(2048).optional().nullable(),
   templateParameters: z.array(z.string().trim().min(1).max(2048)).max(10).optional(),
   audienceListId: z.string().uuid(),
+  scheduledAt: z.string().datetime().optional().nullable(),
+  batchSize: z.coerce.number().int().min(1).max(25).default(5),
+  batchIntervalSeconds: z.coerce.number().int().min(10).max(300).default(60),
+  cooldownDays: z.coerce.number().int().min(0).max(365).default(7),
 });
 
 const batchSchema = z.object({ batchSize: z.coerce.number().int().min(1).max(25).default(10) });
 const listSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+const preflightSchema = z.object({
+  audienceListId: z.string().uuid(),
+  templateName: z.string().trim().min(1).max(100),
+  cooldownDays: z.coerce.number().int().min(0).max(365).default(7),
 });
 
 export async function followupRoutes(app: FastifyInstance) {
@@ -43,6 +53,11 @@ export async function followupRoutes(app: FastifyInstance) {
   app.get('/followup/audiences', { preHandler: read }, async () => ({
     audiences: await getAudienceLists(db),
   }));
+
+  app.get('/followup/preflight', { preHandler: read }, async (request) => {
+    const query = preflightSchema.parse(request.query);
+    return getCampaignPreflight(db, query);
+  });
 
   app.get('/followup/system-status', { preHandler: read }, async () => {
     const approvedTemplates = await getAvailableFollowupTemplates(db);
@@ -111,7 +126,8 @@ export async function followupRoutes(app: FastifyInstance) {
       where: { id: input.audienceListId, isActive: true },
       select: { id: true, name: true },
     });
-    if (!audience) return reply.status(400).send({ message: 'Escolha um grupo de contatos válido' });
+    if (!audience)
+      return reply.status(400).send({ message: 'Escolha um grupo de contatos válido' });
     const campaign = await db.followupCampaign.create({
       data: {
         name: input.name,
@@ -120,6 +136,10 @@ export async function followupRoutes(app: FastifyInstance) {
         offerUrl: template.requiresUrl ? (parameters[0] ?? null) : null,
         templateParameters: parameters as unknown as Prisma.InputJsonValue,
         audienceListId: audience.id,
+        scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : null,
+        batchSize: input.batchSize,
+        batchIntervalSeconds: input.batchIntervalSeconds,
+        cooldownDays: input.cooldownDays,
         createdBy: request.user!.id,
       },
     });
@@ -128,7 +148,15 @@ export async function followupRoutes(app: FastifyInstance) {
       action: 'followup_campaign.create',
       resource: 'followup_campaigns',
       resourceId: campaign.id,
-      newValue: { name: campaign.name, templateName: campaign.templateName, audienceListId: audience.id },
+      newValue: {
+        name: campaign.name,
+        templateName: campaign.templateName,
+        audienceListId: audience.id,
+        scheduledAt: campaign.scheduledAt,
+        batchSize: campaign.batchSize,
+        batchIntervalSeconds: campaign.batchIntervalSeconds,
+        cooldownDays: campaign.cooldownDays,
+      },
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'] ?? '',
     });
@@ -140,7 +168,14 @@ export async function followupRoutes(app: FastifyInstance) {
     const campaign = await db.followupCampaign.findUnique({ where: { id } });
     if (!campaign) return reply.status(404).send({ message: 'Campanha não encontrada' });
     await validateFollowupCampaignWithDb(db, campaign);
-    const audience = await getAudienceStats(db, campaign.audienceListId);
+    if (!campaign.audienceListId) {
+      return reply.status(409).send({ message: 'Escolha um público para a campanha' });
+    }
+    const audience = await getCampaignPreflight(db, {
+      audienceListId: campaign.audienceListId,
+      templateName: campaign.templateName,
+      cooldownDays: campaign.cooldownDays,
+    });
     await db.followupCampaign.update({
       where: { id },
       data: { totalContacts: audience.total, eligibleContacts: audience.eligible, status: 'ready' },
@@ -179,21 +214,29 @@ export async function followupRoutes(app: FastifyInstance) {
     if (prepared.eligibleContacts === 0) {
       return reply.status(409).send({ message: 'Nenhum contato elegível para esta campanha' });
     }
+    const shouldSchedule = Boolean(current.scheduledAt && current.scheduledAt > new Date());
     const running = await db.followupCampaign.update({
       where: { id },
-      data: { status: 'running', startedAt: new Date(), finishedAt: null },
+      data: {
+        status: shouldSchedule ? 'scheduled' : 'running',
+        startedAt: shouldSchedule ? null : new Date(),
+        finishedAt: null,
+        cancelledAt: null,
+      },
     });
 
-    try {
-      await triggerN8n(id);
-    } catch {
-      await db.followupCampaign.update({ where: { id }, data: { status: 'ready' } });
-      return reply.status(502).send({ message: 'O n8n não aceitou o início da campanha' });
+    if (!shouldSchedule) {
+      try {
+        await triggerN8n(id);
+      } catch {
+        await db.followupCampaign.update({ where: { id }, data: { status: 'ready' } });
+        return reply.status(502).send({ message: 'O n8n não aceitou o início da campanha' });
+      }
     }
 
     await writeAuditLog(db, {
       userId: request.user!.id,
-      action: 'followup_campaign.start',
+      action: shouldSchedule ? 'followup_campaign.schedule' : 'followup_campaign.start',
       resource: 'followup_campaigns',
       resourceId: id,
       newValue: { eligibleContacts: running.eligibleContacts },
@@ -232,6 +275,41 @@ export async function followupRoutes(app: FastifyInstance) {
       return reply.status(502).send({ message: 'O n8n não aceitou a retomada' });
     }
     return db.followupCampaign.findUnique({ where: { id } });
+  });
+
+  app.post('/followup/campaigns/:id/cancel', { preHandler: update }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const campaign = await db.followupCampaign.findUnique({ where: { id } });
+    if (
+      !campaign ||
+      !['draft', 'ready', 'scheduled', 'running', 'paused'].includes(campaign.status)
+    ) {
+      return reply.status(409).send({ message: 'A campanha não pode ser cancelada neste estado' });
+    }
+    const cancelledAt = new Date();
+    const [updated] = await db.$transaction([
+      db.followupCampaign.update({
+        where: { id },
+        data: { status: 'cancelled', cancelledAt, finishedAt: cancelledAt },
+      }),
+      db.followupCampaignMessage.updateMany({
+        where: { campaignId: id, status: { in: ['queued', 'processing'] } },
+        data: {
+          status: 'skipped',
+          errorCode: 'cancelled',
+          errorMessage: 'Campanha cancelada pelo administrador',
+        },
+      }),
+    ]);
+    await writeAuditLog(db, {
+      userId: request.user!.id,
+      action: 'followup_campaign.cancel',
+      resource: 'followup_campaigns',
+      resourceId: id,
+      ipAddress: request.ip,
+      userAgent: request.headers['user-agent'] ?? '',
+    });
+    return updated;
   });
 
   app.get('/followup/campaigns/:id/export.csv', { preHandler: read }, async (request, reply) => {
@@ -281,6 +359,28 @@ export async function followupRoutes(app: FastifyInstance) {
 
   app.post('/internal/followup/retry-due', async (request, reply) => {
     if (!verifyInternalToken(request)) return reply.status(403).send({ message: 'Forbidden' });
+    const due = await db.followupCampaign.findMany({
+      where: { status: 'scheduled', scheduledAt: { lte: new Date() } },
+      select: { id: true },
+      take: 20,
+    });
+    const scheduledResults = [];
+    for (const campaign of due) {
+      await db.followupCampaign.update({
+        where: { id: campaign.id },
+        data: { status: 'running', startedAt: new Date() },
+      });
+      try {
+        await triggerN8n(campaign.id);
+        scheduledResults.push({ id: campaign.id, started: true });
+      } catch {
+        await db.followupCampaign.update({
+          where: { id: campaign.id },
+          data: { status: 'scheduled' },
+        });
+        scheduledResults.push({ id: campaign.id, started: false });
+      }
+    }
     const campaigns = await db.followupCampaign.findMany({
       where: {
         status: 'running',
@@ -293,7 +393,7 @@ export async function followupRoutes(app: FastifyInstance) {
     });
     const results = [];
     for (const campaign of campaigns) results.push(await processFollowupBatch(db, campaign.id, 10));
-    return { campaigns: campaigns.length, results };
+    return { scheduled: scheduledResults, campaigns: campaigns.length, results };
   });
 }
 

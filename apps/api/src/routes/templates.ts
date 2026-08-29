@@ -17,6 +17,7 @@ import {
   MetaTemplateError,
   analyzeTemplateCategory,
   createAndSubmitMetaTemplate,
+  deleteMetaTemplate,
   listManagedMetaTemplates,
   syncMetaTemplates,
 } from '../services/meta-template.js';
@@ -69,6 +70,29 @@ export async function templateRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { body } = classifySchema.parse(request.body);
       return reply.send(analyzeTemplateCategory(body));
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>(
+    '/templates/meta/:id',
+    {
+      preHandler: requirePermission('messages', 'delete'),
+    },
+    async (request, reply) => {
+      try {
+        const template = await deleteMetaTemplate(getClient(), request.params.id);
+        await writeAuditLog(getClient(), {
+          userId: request.user!.id,
+          action: 'meta_template.delete',
+          resource: 'messages',
+          resourceId: template.id,
+          oldValue: { name: template.name, language: template.language },
+          ipAddress: request.ip,
+        });
+        return reply.status(204).send();
+      } catch (error) {
+        return sendMetaTemplateError(reply, error);
+      }
     },
   );
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Badge, Button, Input, Modal } from '../components/index.js';
+import { Alert, Badge, Button, ConfirmDialog, Input, Modal } from '../components/index.js';
 
 const API = import.meta.env.VITE_API_URL ?? '';
 
@@ -68,6 +68,8 @@ export function TemplatesPage() {
   const [examples, setExamples] = useState<string[]>([]);
   const [allowCategoryChange, setAllowCategoryChange] = useState(true);
   const [analysis, setAnalysis] = useState<CategoryAnalysis | null>(null);
+  const [templateToDelete, setTemplateToDelete] = useState<ManagedTemplate | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const variableCount = useMemo(() => countVariables(body), [body]);
   const preview = useMemo(() => renderPreview(body, examples), [body, examples]);
@@ -165,6 +167,26 @@ export function TemplatesPage() {
     }
   }
 
+  async function deleteTemplate() {
+    if (!templateToDelete) return;
+    setDeleting(true);
+    setError('');
+    try {
+      const response = await fetch(`${API}/api/templates/meta/${templateToDelete.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error(await responseMessage(response));
+      setSuccess('Template excluído na Meta e removido do CRM.');
+      setTemplateToDelete(null);
+      await load();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Falha ao excluir o template');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   function resetForm() {
     setName('');
     setLabel('');
@@ -224,7 +246,11 @@ export function TemplatesPage() {
           style={{ marginTop: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}
         >
           {templates.map((template) => (
-            <TemplateCard key={template.id} template={template} />
+            <TemplateCard
+              key={template.id}
+              template={template}
+              onDelete={() => setTemplateToDelete(template)}
+            />
           ))}
         </div>
       )}
@@ -352,11 +378,21 @@ export function TemplatesPage() {
           )}
         </div>
       </Modal>
+      <ConfirmDialog
+        open={Boolean(templateToDelete)}
+        title="Excluir template"
+        message={`Excluir “${templateToDelete?.label ?? ''}” também o remove da Meta. Campanhas antigas continuam no histórico.`}
+        confirmLabel="Excluir definitivamente"
+        variant="danger"
+        loading={deleting}
+        onConfirm={deleteTemplate}
+        onCancel={() => setTemplateToDelete(null)}
+      />
     </div>
   );
 }
 
-function TemplateCard({ template }: { template: ManagedTemplate }) {
+function TemplateCard({ template, onDelete }: { template: ManagedTemplate; onDelete: () => void }) {
   const finalCategory = template.metaCategory || template.requestedCategory;
   const reclassified = Boolean(
     template.metaCategory && template.metaCategory !== template.requestedCategory,
@@ -400,6 +436,11 @@ function TemplateCard({ template }: { template: ManagedTemplate }) {
       {template.rejectionReason && template.rejectionReason !== 'NONE' && (
         <Alert variant="danger">Motivo: {template.rejectionReason}</Alert>
       )}
+      <div className="flex justify-end" style={{ marginTop: '1rem' }}>
+        <Button variant="danger" size="sm" onClick={onDelete}>
+          Excluir
+        </Button>
+      </div>
     </article>
   );
 }

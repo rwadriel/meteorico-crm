@@ -32,6 +32,7 @@ interface ImportRecord {
   status: string;
   filename: string;
   audienceName: string | null;
+  consentSource?: string | null;
   totalRows: number;
   processedRows: number;
   errorRows: number;
@@ -57,6 +58,8 @@ export function ImportsPage() {
   const [importType, setImportType] = useState<'contacts' | 'participations'>('contacts');
   const [file, setFile] = useState<File | null>(null);
   const [audienceName, setAudienceName] = useState('');
+  const [consentSource, setConsentSource] = useState('Grupo do Meteórico');
+  const [consentAt, setConsentAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
@@ -79,7 +82,9 @@ export function ImportsPage() {
     }
   }, []);
 
-  useEffect(() => { fetchImports(); }, [fetchImports]);
+  useEffect(() => {
+    fetchImports();
+  }, [fetchImports]);
 
   function resetWizard() {
     setStep('list');
@@ -87,6 +92,8 @@ export function ImportsPage() {
     setPreview(null);
     setImportType('contacts');
     setAudienceName('');
+    setConsentSource('Grupo do Meteórico');
+    setConsentAt(new Date().toISOString().slice(0, 10));
   }
 
   async function handleUpload() {
@@ -97,7 +104,11 @@ export function ImportsPage() {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('type', importType);
-      if (importType === 'contacts') formData.append('audienceName', audienceName.trim());
+      if (importType === 'contacts') {
+        formData.append('audienceName', audienceName.trim());
+        formData.append('consentSource', consentSource.trim());
+        formData.append('consentAt', new Date(`${consentAt}T12:00:00.000Z`).toISOString());
+      }
 
       const res = await fetch(`${API}/api/imports/preview`, {
         method: 'POST',
@@ -200,13 +211,12 @@ export function ImportsPage() {
     {
       key: 'actions',
       header: 'Acoes',
-      render: (i: ImportRecord) => (
+      render: (i: ImportRecord) =>
         i.status === 'done' ? (
           <Button size="sm" variant="danger" onClick={() => setRollbackId(i.id)}>
             Reverter
           </Button>
-        ) : null
-      ),
+        ) : null,
     },
   ];
 
@@ -215,14 +225,28 @@ export function ImportsPage() {
       <div className="content-header">
         <div>
           <h1 className="content-title">Importar CSV</h1>
-          <p className="content-subtitle">Importe contatos, telefones e status de compra com prévia antes de salvar</p>
+          <p className="content-subtitle">
+            Importe contatos, telefones e status de compra com prévia antes de salvar
+          </p>
         </div>
         {step === 'list' && <Button onClick={() => setStep('upload')}>Nova importação</Button>}
-        {step !== 'list' && <Button variant="secondary" onClick={resetWizard}>Voltar</Button>}
+        {step !== 'list' && (
+          <Button variant="secondary" onClick={resetWizard}>
+            Voltar
+          </Button>
+        )}
       </div>
 
-      {error && <Alert variant="danger" onDismiss={() => setError('')}>{error}</Alert>}
-      {success && <Alert variant="success" onDismiss={() => setSuccess('')}>{success}</Alert>}
+      {error && (
+        <Alert variant="danger" onDismiss={() => setError('')}>
+          {error}
+        </Alert>
+      )}
+      {success && (
+        <Alert variant="success" onDismiss={() => setSuccess('')}>
+          {success}
+        </Alert>
+      )}
 
       {step === 'upload' && (
         <div className="card">
@@ -230,23 +254,47 @@ export function ImportsPage() {
 
           <div className="form-group">
             <label>Tipo de importação</label>
-            <select className="input" value={importType} onChange={(e) => setImportType(e.target.value as 'contacts' | 'participations')}>
+            <select
+              className="input"
+              value={importType}
+              onChange={(e) => setImportType(e.target.value as 'contacts' | 'participations')}
+            >
               <option value="contacts">Contatos (carga inicial)</option>
               <option value="participations">Participacoes por campanha</option>
             </select>
           </div>
 
           {importType === 'contacts' && (
-            <Input
-              label="Nome do grupo de contatos"
-              value={audienceName}
-              onChange={(event) => setAudienceName(event.target.value)}
-              placeholder="Ex.: Grupo 2 ou Alunos de agosto"
-            />
+            <div
+              className="grid gap-4"
+              style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}
+            >
+              <Input
+                label="Nome do grupo de contatos"
+                value={audienceName}
+                onChange={(event) => setAudienceName(event.target.value)}
+                placeholder="Ex.: Grupo 2 ou Alunos de agosto"
+              />
+              <Input
+                label="Origem do consentimento"
+                value={consentSource}
+                onChange={(event) => setConsentSource(event.target.value)}
+                placeholder="Ex.: Grupo do Meteórico"
+              />
+              <Input
+                label="Data do consentimento"
+                type="date"
+                value={consentAt}
+                onChange={(event) => setConsentAt(event.target.value)}
+              />
+            </div>
           )}
 
           <div
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
             onClick={() => fileRef.current?.click()}
@@ -265,10 +313,15 @@ export function ImportsPage() {
               type="file"
               accept=".csv"
               style={{ display: 'none' }}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) setFile(f);
+              }}
             />
             {file ? (
-              <p>{file.name} ({(file.size / 1024).toFixed(1)} KB)</p>
+              <p>
+                {file.name} ({(file.size / 1024).toFixed(1)} KB)
+              </p>
             ) : (
               <p style={{ color: 'var(--text-secondary)' }}>
                 Arraste um arquivo CSV aqui ou clique para selecionar
@@ -278,7 +331,11 @@ export function ImportsPage() {
 
           <Button
             onClick={handleUpload}
-            disabled={!file || (importType === 'contacts' && !audienceName.trim())}
+            disabled={
+              !file ||
+              (importType === 'contacts' &&
+                (!audienceName.trim() || !consentSource.trim() || !consentAt))
+            }
             loading={uploading}
           >
             Enviar e Visualizar
@@ -316,7 +373,14 @@ export function ImportsPage() {
               <h4 style={{ marginBottom: '0.5rem' }}>Erros encontrados</h4>
               <div style={{ maxHeight: '200px', overflow: 'auto' }}>
                 {preview.errors.map((err, i) => (
-                  <div key={i} style={{ fontSize: '0.875rem', color: 'var(--danger)', marginBottom: '0.25rem' }}>
+                  <div
+                    key={i}
+                    style={{
+                      fontSize: '0.875rem',
+                      color: 'var(--danger)',
+                      marginBottom: '0.25rem',
+                    }}
+                  >
                     Linha {err.row}: {err.field} - {err.message}
                   </div>
                 ))}
@@ -326,24 +390,30 @@ export function ImportsPage() {
 
           {preview.preview.length > 0 && (
             <div style={{ marginBottom: '1rem' }}>
-              <h4 style={{ marginBottom: '0.5rem' }}>Amostra (primeiras {preview.preview.length} linhas)</h4>
+              <h4 style={{ marginBottom: '0.5rem' }}>
+                Amostra (primeiras {preview.preview.length} linhas)
+              </h4>
               <div style={{ overflow: 'auto', maxHeight: '300px' }}>
                 <table className="table">
                   <thead>
                     <tr>
                       <th>#</th>
-                      {Object.keys(preview.preview[0].data).filter(k => !k.startsWith('_')).map((k) => (
-                        <th key={k}>{k}</th>
-                      ))}
+                      {Object.keys(preview.preview[0].data)
+                        .filter((k) => !k.startsWith('_'))
+                        .map((k) => (
+                          <th key={k}>{k}</th>
+                        ))}
                     </tr>
                   </thead>
                   <tbody>
                     {preview.preview.map((row) => (
                       <tr key={row.rowNumber}>
                         <td>{row.rowNumber}</td>
-                        {Object.entries(row.data).filter(([k]) => !k.startsWith('_')).map(([k, v]) => (
-                          <td key={k}>{String(v)}</td>
-                        ))}
+                        {Object.entries(row.data)
+                          .filter(([k]) => !k.startsWith('_'))
+                          .map(([k, v]) => (
+                            <td key={k}>{String(v)}</td>
+                          ))}
                       </tr>
                     ))}
                   </tbody>
@@ -353,8 +423,14 @@ export function ImportsPage() {
           )}
 
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <Button variant="secondary" onClick={resetWizard}>Cancelar</Button>
-            <Button onClick={handleConfirm} loading={confirming} disabled={preview.validCount === 0}>
+            <Button variant="secondary" onClick={resetWizard}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirm}
+              loading={confirming}
+              disabled={preview.validCount === 0}
+            >
               Confirmar Importacao ({preview.validCount} registros)
             </Button>
           </div>
@@ -366,7 +442,11 @@ export function ImportsPage() {
           {loading ? (
             <div style={{ padding: '2rem', textAlign: 'center' }}>Carregando...</div>
           ) : (
-            <Table columns={historyColumns} data={imports} emptyMessage="Nenhuma importacao realizada" />
+            <Table
+              columns={historyColumns}
+              data={imports}
+              emptyMessage="Nenhuma importacao realizada"
+            />
           )}
         </div>
       )}
