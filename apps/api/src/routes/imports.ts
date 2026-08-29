@@ -48,6 +48,7 @@ export async function importRoutes(app: FastifyInstance) {
     let csvContent: string;
     let filename: string;
     let importType: string;
+    let audienceName: string | undefined;
 
     if (contentType.includes('multipart/form-data')) {
       const parts = request.parts();
@@ -65,6 +66,8 @@ export async function importRoutes(app: FastifyInstance) {
           fileName = part.filename ?? 'upload.csv';
         } else if (part.fieldname === 'type') {
           type = (part as { value: string }).value;
+        } else if (part.fieldname === 'audienceName') {
+          audienceName = (part as { value: string }).value.trim();
         }
       }
 
@@ -76,11 +79,12 @@ export async function importRoutes(app: FastifyInstance) {
       filename = fileName;
       importType = type;
     } else {
-      const body = request.body as { content: string; filename?: string; type: string };
+      const body = request.body as { content: string; filename?: string; type: string; audienceName?: string };
       const parsed = importPreviewSchema.parse(body);
       csvContent = body.content;
       filename = body.filename ?? 'upload.csv';
       importType = parsed.type;
+      audienceName = parsed.audienceName;
     }
 
     if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
@@ -88,13 +92,20 @@ export async function importRoutes(app: FastifyInstance) {
     }
 
     try {
-      const result = await createImportPreview(db, importType, filename, csvContent, request.user!.id);
+      const result = await createImportPreview(
+        db,
+        importType,
+        filename,
+        csvContent,
+        request.user!.id,
+        audienceName,
+      );
       await writeAuditLog(db, {
         userId: request.user!.id,
         action: 'import.preview',
         resource: 'imports',
         resourceId: result.import.id,
-        newValue: { type: importType, filename, totalRows: result.import.totalRows },
+        newValue: { type: importType, filename, audienceName: result.import.audienceName, totalRows: result.import.totalRows },
         ipAddress: request.ip,
         userAgent: request.headers['user-agent'] ?? '',
       });

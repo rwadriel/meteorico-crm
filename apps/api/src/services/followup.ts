@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@meteorico/database';
+import type { Prisma, PrismaClient } from '@meteorico/database';
 import {
   OutboundBlockedError,
   assertStagingRecipientAllowed,
@@ -153,19 +153,43 @@ export async function validateFollowupCampaignWithDb(
   return { template, parameters };
 }
 
-export async function getAudienceStats(db: PrismaClient) {
+export async function getAudienceLists(db: PrismaClient) {
+  const lists = await db.contactList.findMany({
+    where: { isActive: true },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return Promise.all(
+    lists.map(async (list) => ({
+      id: list.id,
+      name: list.name,
+      createdAt: list.createdAt,
+      ...(await getAudienceStats(db, list.id)),
+    })),
+  );
+}
+
+export async function getAudienceStats(db: PrismaClient, audienceListId?: string | null) {
+  const scope: Prisma.ContactWhereInput = audienceListId
+    ? { listMemberships: { some: { listId: audienceListId } } }
+    : {};
   const [total, validPhones, buyers, optOuts, eligible] = await Promise.all([
-    db.contact.count(),
-    db.contact.count({ where: { normalizedPhone: { not: null } } }),
+    db.contact.count({ where: scope }),
+    db.contact.count({ where: { AND: [scope, { normalizedPhone: { not: null } }] } }),
     db.contact.count({
       where: {
-        OR: [{ isStudent: true }, { totalPurchases: { gt: 0 } }, { purchaseStatus: 'purchased' }],
+        AND: [
+          scope,
+          { OR: [{ isStudent: true }, { totalPurchases: { gt: 0 } }, { purchaseStatus: 'purchased' }] },
+        ],
       },
     }),
     db.contact.count({
-      where: { preferences: { some: { channel: 'whatsapp', optedOut: true } } },
+      where: {
+        AND: [scope, { preferences: { some: { channel: 'whatsapp', optedOut: true } } }],
+      },
     }),
-    db.contact.count({ where: eligibleContactWhere() }),
+    db.contact.count({ where: eligibleContactWhere(audienceListId) }),
   ]);
 
   return {
@@ -186,8 +210,11 @@ export async function prepareFollowupCampaign(db: PrismaClient, campaignId: stri
   }
 
   const [stats, contacts] = await Promise.all([
-    getAudienceStats(db),
-    db.contact.findMany({ where: eligibleContactWhere(), select: { id: true } }),
+    getAudienceStats(db, campaign.audienceListId),
+    db.contact.findMany({
+      where: eligibleContactWhere(campaign.audienceListId),
+      select: { id: true },
+    }),
   ]);
 
   if (contacts.length > 0) {
@@ -444,17 +471,20 @@ export async function refreshFollowupCampaignMetrics(db: PrismaClient, campaignI
   });
 }
 
-function eligibleContactWhere() {
+function eligibleContactWhere(audienceListId?: string | null): Prisma.ContactWhereInput {
   const stagingAllowlist = process.env.WHATSAPP_STAGING_ALLOWLIST?.trim();
   const allowedPhones = stagingAllowlist ? [...parseStagingAllowlist(stagingAllowlist)] : null;
 
   return {
+    ...(audienceListId
+      ? { listMemberships: { some: { listId: audienceListId } } }
+      : {}),
     normalizedPhone: allowedPhones ? { in: allowedPhones } : { not: null },
     isStudent: false,
     totalPurchases: 0,
     purchaseStatus: { not: 'purchased' },
     NOT: { preferences: { some: { channel: 'whatsapp', optedOut: true } } },
-  } as const;
+  };
 }
 
 async function sendTemplateMessage(input: {

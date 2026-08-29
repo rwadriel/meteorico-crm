@@ -5,6 +5,7 @@ export const IMPORT_STATUSES = ['pending', 'previewing', 'processing', 'done', '
 
 export const importPreviewSchema = z.object({
   type: z.enum(IMPORT_TYPES),
+  audienceName: z.string().trim().min(1).max(120).optional(),
 });
 
 export const importConfirmSchema = z.object({

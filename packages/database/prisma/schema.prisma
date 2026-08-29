@@ -113,6 +113,7 @@ model Contact {
   diagnoses        Diagnosis[]
   preferences      ContactPreference[]
   followupMessages FollowupCampaignMessage[]
+  listMemberships  ContactListMembership[]
 
   @@index([normalizedPhone])
   @@index([email])
@@ -168,6 +169,7 @@ model FollowupCampaign {
   templateLanguage   String    @default("pt_BR") @map("template_language")
   offerUrl           String?   @map("offer_url")
   templateParameters Json?     @map("template_parameters")
+  audienceListId     String?   @map("audience_list_id")
   status             String    @default("draft")
   totalContacts      Int       @default(0) @map("total_contacts")
   eligibleContacts   Int       @default(0) @map("eligible_contacts")
@@ -185,11 +187,44 @@ model FollowupCampaign {
   finishedAt         DateTime? @map("finished_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
-  creator  AdminUser                 @relation(fields: [createdBy], references: [id])
-  messages FollowupCampaignMessage[]
+  creator      AdminUser                 @relation(fields: [createdBy], references: [id])
+  audienceList ContactList?              @relation(fields: [audienceListId], references: [id])
+  messages     FollowupCampaignMessage[]
 
   @@index([status, createdAt])
+  @@index([audienceListId])
   @@map("followup_campaigns")
+}
+
+model ContactList {
+  id             String   @id @default(uuid())
+  name           String
+  sourceImportId String?  @unique @map("source_import_id")
+  createdBy      String   @map("created_by")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  sourceImport Import?                 @relation(fields: [sourceImportId], references: [id], onDelete: SetNull)
+  memberships  ContactListMembership[]
+  campaigns    FollowupCampaign[]
+
+  @@index([isActive, createdAt])
+  @@map("contact_lists")
+}
+
+model ContactListMembership {
+  id        String   @id @default(uuid())
+  listId    String   @map("list_id")
+  contactId String   @map("contact_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  list    ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  contact Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, contactId])
+  @@index([contactId])
+  @@map("contact_list_memberships")
 }
 
 model FollowupCampaignMessage {
@@ -748,6 +783,7 @@ model Import {
   type          String
   status        String    @default("pending")
   filename      String
+  audienceName  String?   @map("audience_name")
   totalRows     Int       @default(0) @map("total_rows")
   processedRows Int       @default(0) @map("processed_rows")
   errorRows     Int       @default(0) @map("error_rows")
@@ -756,8 +792,9 @@ model Import {
   completedAt   DateTime? @map("completed_at")
   createdAt     DateTime  @default(now()) @map("created_at")
 
-  creator AdminUser   @relation(fields: [createdBy], references: [id])
-  rows    ImportRow[]
+  creator  AdminUser    @relation(fields: [createdBy], references: [id])
+  rows     ImportRow[]
+  audience ContactList?
 
   @@map("imports")
 }

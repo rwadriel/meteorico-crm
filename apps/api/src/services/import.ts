@@ -418,6 +418,7 @@ export async function createImportPreview(
   filename: string,
   content: string,
   userId: string,
+  audienceName?: string,
 ) {
   let parsedRows: (ParsedContactRow | ParsedParticipationRow)[];
   let parseErrors: ParseError[];
@@ -535,6 +536,10 @@ export async function createImportPreview(
       type,
       status: 'previewing',
       filename,
+      audienceName:
+        type === 'contacts'
+          ? audienceName?.trim() || filename.replace(/\.[^.]+$/, '') || 'Lista de contatos'
+          : null,
       totalRows: parsedRows.length + parseErrors.length,
       processedRows: 0,
       errorRows: parseErrors.length,
@@ -590,6 +595,19 @@ export async function processContactsImport(db: PrismaClient, importId: string) 
   const imp = await db.import.findUnique({ where: { id: importId } });
   if (!imp) throw new Error('Import not found');
   if (imp.status !== 'previewing') throw new Error('Import is not in previewing status');
+
+  const audience = await db.contactList.upsert({
+    where: { sourceImportId: importId },
+    create: {
+      name: imp.audienceName?.trim() || imp.filename.replace(/\.[^.]+$/, '') || 'Lista de contatos',
+      sourceImportId: importId,
+      createdBy: imp.createdBy,
+    },
+    update: {
+      name: imp.audienceName?.trim() || imp.filename.replace(/\.[^.]+$/, '') || 'Lista de contatos',
+      isActive: true,
+    },
+  });
 
   await db.import.update({
     where: { id: importId },
@@ -704,6 +722,12 @@ export async function processContactsImport(db: PrismaClient, importId: string) 
               ...contactData,
             },
             update: contactData,
+          });
+
+          await tx.contactListMembership.upsert({
+            where: { listId_contactId: { listId: audience.id, contactId: result.id } },
+            create: { listId: audience.id, contactId: result.id },
+            update: {},
           });
 
           const afterState: Record<string, unknown> = {
@@ -1031,6 +1055,10 @@ export async function rollbackImport(db: PrismaClient, importId: string) {
           });
         }
       }
+      await tx.contactList.updateMany({
+        where: { sourceImportId: importId },
+        data: { isActive: false },
+      });
     } else if (imp.type === 'participations') {
       for (const row of successRows) {
         const data = row.data as Record<string, unknown>;

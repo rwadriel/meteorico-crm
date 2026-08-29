@@ -20,15 +20,15 @@ O CRM faz uma recomendação conservadora, mas a decisão final é da Meta. Um t
 
 1. Abra o CRM e entre com sua conta.
 2. Vá em **Importar CSV**.
-3. Escolha o arquivo `.csv`.
+3. Dê um nome ao grupo de contatos e escolha o arquivo `.csv`.
 4. Confira válidos, duplicados e inválidos.
-5. Confirme a importação.
+5. Confirme a importação; esse CSV ficará disponível como um público independente.
 6. Vá em **Follow-up WhatsApp**.
 7. Clique em **Nova campanha**.
-8. Escolha o template.
+8. Escolha o público importado e o template.
 9. Preencha os valores de `{{1}}`, `{{2}}` solicitados pelo template.
 10. Execute **Modo Teste**.
-11. Confira elegíveis e excluídos.
+11. Confira elegíveis e excluídos somente daquele público.
 12. Clique em **Iniciar campanha** e confirme.
 13. Acompanhe o progresso na mesma tela.
 
@@ -37,6 +37,7 @@ O CRM faz uma recomendação conservadora, mas a decisão final é da Meta. Um t
 - compradores não recebem follow-up;
 - opt-outs nunca voltam à fila automaticamente;
 - um contato só entra uma vez em cada campanha;
+- um mesmo contato pode pertencer a vários públicos, sem duplicar dentro da campanha;
 - uma falha individual não interrompe os demais envios;
 - `SAIR`, `PARAR`, `CANCELAR`, `REMOVER` e `NÃO QUERO` bloqueiam novos envios;
 - **Pausar** impede que novos lotes sejam processados; **Continuar** retoma a fila.

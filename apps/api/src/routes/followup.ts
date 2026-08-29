@@ -6,6 +6,7 @@ import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAuditLog } from '../services/audit.js';
 import {
   getAvailableFollowupTemplates,
+  getAudienceLists,
   getAudienceStats,
   prepareFollowupCampaign,
   processFollowupBatch,
@@ -18,6 +19,7 @@ const createSchema = z.object({
   templateName: z.string().trim().min(1).max(100),
   offerUrl: z.string().trim().max(2048).optional().nullable(),
   templateParameters: z.array(z.string().trim().min(1).max(2048)).max(10).optional(),
+  audienceListId: z.string().uuid(),
 });
 
 const batchSchema = z.object({ batchSize: z.coerce.number().int().min(1).max(25).default(10) });
@@ -37,6 +39,10 @@ export async function followupRoutes(app: FastifyInstance) {
   });
 
   app.get('/followup/audience', { preHandler: read }, async () => getAudienceStats(db));
+
+  app.get('/followup/audiences', { preHandler: read }, async () => ({
+    audiences: await getAudienceLists(db),
+  }));
 
   app.get('/followup/system-status', { preHandler: read }, async () => {
     const approvedTemplates = await getAvailableFollowupTemplates(db);
@@ -63,6 +69,7 @@ export async function followupRoutes(app: FastifyInstance) {
     const query = listSchema.parse(request.query);
     const [campaigns, total] = await Promise.all([
       db.followupCampaign.findMany({
+        include: { audienceList: { select: { id: true, name: true } } },
         orderBy: { createdAt: 'desc' },
         skip: (query.page - 1) * query.limit,
         take: query.limit,
@@ -100,6 +107,11 @@ export async function followupRoutes(app: FastifyInstance) {
   app.post('/followup/campaigns', { preHandler: create }, async (request, reply) => {
     const input = createSchema.parse(request.body);
     const { parameters, template } = await validateFollowupCampaignWithDb(db, input);
+    const audience = await db.contactList.findFirst({
+      where: { id: input.audienceListId, isActive: true },
+      select: { id: true, name: true },
+    });
+    if (!audience) return reply.status(400).send({ message: 'Escolha um grupo de contatos válido' });
     const campaign = await db.followupCampaign.create({
       data: {
         name: input.name,
@@ -107,6 +119,7 @@ export async function followupRoutes(app: FastifyInstance) {
         templateLanguage: template.language,
         offerUrl: template.requiresUrl ? (parameters[0] ?? null) : null,
         templateParameters: parameters as unknown as Prisma.InputJsonValue,
+        audienceListId: audience.id,
         createdBy: request.user!.id,
       },
     });
@@ -115,7 +128,7 @@ export async function followupRoutes(app: FastifyInstance) {
       action: 'followup_campaign.create',
       resource: 'followup_campaigns',
       resourceId: campaign.id,
-      newValue: { name: campaign.name, templateName: campaign.templateName },
+      newValue: { name: campaign.name, templateName: campaign.templateName, audienceListId: audience.id },
       ipAddress: request.ip,
       userAgent: request.headers['user-agent'] ?? '',
     });
@@ -127,7 +140,7 @@ export async function followupRoutes(app: FastifyInstance) {
     const campaign = await db.followupCampaign.findUnique({ where: { id } });
     if (!campaign) return reply.status(404).send({ message: 'Campanha não encontrada' });
     await validateFollowupCampaignWithDb(db, campaign);
-    const audience = await getAudienceStats(db);
+    const audience = await getAudienceStats(db, campaign.audienceListId);
     await db.followupCampaign.update({
       where: { id },
       data: { totalContacts: audience.total, eligibleContacts: audience.eligible, status: 'ready' },

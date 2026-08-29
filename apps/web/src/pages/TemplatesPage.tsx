@@ -397,7 +397,7 @@ function TemplateCard({ template }: { template: ManagedTemplate }) {
           {CATEGORY_LABELS[finalCategory] ?? finalCategory}.
         </Alert>
       )}
-      {template.rejectionReason && (
+      {template.rejectionReason && template.rejectionReason !== 'NONE' && (
         <Alert variant="danger">Motivo: {template.rejectionReason}</Alert>
       )}
     </article>

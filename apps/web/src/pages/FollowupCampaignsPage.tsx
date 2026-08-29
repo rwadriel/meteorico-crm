@@ -23,11 +23,19 @@ interface Audience {
   optOuts: number;
 }
 
+interface AudienceList extends Audience {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
 interface FollowupCampaign {
   id: string;
   name: string;
   templateName: string;
   offerUrl: string | null;
+  audienceListId: string | null;
+  audienceList: { id: string; name: string } | null;
   status: string;
   eligibleContacts: number;
   queuedCount: number;
@@ -64,6 +72,7 @@ export function FollowupCampaignsPage() {
   const [campaigns, setCampaigns] = useState<FollowupCampaign[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [audience, setAudience] = useState<Audience | null>(null);
+  const [audiences, setAudiences] = useState<AudienceList[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -71,12 +80,17 @@ export function FollowupCampaignsPage() {
   const [name, setName] = useState('');
   const [templateName, setTemplateName] = useState('meteorico_acompanhamento');
   const [templateParameters, setTemplateParameters] = useState<string[]>([]);
+  const [audienceListId, setAudienceListId] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmStart, setConfirmStart] = useState<FollowupCampaign | null>(null);
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.name === templateName),
     [templates, templateName],
+  );
+  const selectedAudience = useMemo(
+    () => audiences.find((item) => item.id === audienceListId),
+    [audiences, audienceListId],
   );
   const renderedPreview = selectedTemplate
     ? selectedTemplate.preview.replace(
@@ -91,22 +105,25 @@ export function FollowupCampaignsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [campaignResponse, templateResponse, audienceResponse] = await Promise.all([
+      const [campaignResponse, templateResponse, audienceResponse, audiencesResponse] = await Promise.all([
         fetch(`${API}/api/followup/campaigns?limit=100`, { credentials: 'include' }),
         fetch(`${API}/api/followup/templates`, { credentials: 'include' }),
         fetch(`${API}/api/followup/audience`, { credentials: 'include' }),
+        fetch(`${API}/api/followup/audiences`, { credentials: 'include' }),
       ]);
-      if (!campaignResponse.ok || !templateResponse.ok || !audienceResponse.ok) {
+      if (!campaignResponse.ok || !templateResponse.ok || !audienceResponse.ok || !audiencesResponse.ok) {
         throw new Error('Não foi possível carregar o módulo de follow-up');
       }
-      const [campaignData, templateData, audienceData] = await Promise.all([
+      const [campaignData, templateData, audienceData, audiencesData] = await Promise.all([
         campaignResponse.json(),
         templateResponse.json(),
         audienceResponse.json(),
+        audiencesResponse.json(),
       ]);
       setCampaigns(campaignData.campaigns);
       setTemplates(templateData.templates);
       setAudience(audienceData);
+      setAudiences(audiencesData.audiences);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Erro inesperado');
     } finally {
@@ -114,6 +131,11 @@ export function FollowupCampaignsPage() {
     }
   }, []);
 
+  useEffect(() => {
+    if (audiences.length > 0 && !audiences.some((item) => item.id === audienceListId)) {
+      setAudienceListId(audiences[0].id);
+    }
+  }, [audiences, audienceListId]);
   useEffect(() => {
     load();
   }, [load]);
@@ -144,7 +166,7 @@ export function FollowupCampaignsPage() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, templateName, templateParameters }),
+        body: JSON.stringify({ name, templateName, templateParameters, audienceListId }),
       });
       if (!response.ok) throw new Error(await responseMessage(response));
       setShowCreate(false);
@@ -194,6 +216,11 @@ export function FollowupCampaignsPage() {
   const columns = [
     { key: 'name', header: 'Nome' },
     { key: 'templateName', header: 'Template' },
+    {
+      key: 'audienceList',
+      header: 'Público',
+      render: (campaign: FollowupCampaign) => campaign.audienceList?.name ?? 'Base geral (legado)',
+    },
     {
       key: 'status',
       header: 'Status',
@@ -304,7 +331,7 @@ export function FollowupCampaignsPage() {
             <Button variant="secondary" onClick={() => setShowCreate(false)}>
               Cancelar
             </Button>
-            <Button loading={saving} onClick={createCampaign}>
+            <Button loading={saving} onClick={createCampaign} disabled={!audienceListId || !name.trim()}>
               Criar campanha
             </Button>
           </>
@@ -316,6 +343,25 @@ export function FollowupCampaignsPage() {
           onChange={(event) => setName(event.target.value)}
           placeholder="Ex.: Oferta Meteórico — agosto"
         />
+        <div className="form-group">
+          <label>Público</label>
+          <select
+            className="input"
+            value={audienceListId}
+            onChange={(event) => setAudienceListId(event.target.value)}
+          >
+            {audiences.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name} — {item.eligible} elegíveis de {item.total}
+              </option>
+            ))}
+          </select>
+          {audiences.length === 0 && (
+            <p className="text-sm" style={{ color: 'var(--warning)', marginTop: '0.4rem' }}>
+              Importe um CSV de contatos para criar o primeiro público.
+            </p>
+          )}
+        </div>
         <div className="form-group">
           <label>Template aprovado</label>
           <select
@@ -358,8 +404,8 @@ export function FollowupCampaignsPage() {
           {renderedPreview}
         </div>
         <p className="text-sm text-secondary" style={{ marginTop: '1rem' }}>
-          {audience?.eligible ?? 0} contatos elegíveis neste momento. O nome importado não será
-          usado na mensagem.
+          {selectedAudience?.eligible ?? 0} contatos elegíveis no público “{selectedAudience?.name ?? '—'}”.
+          Números repetidos recebem somente uma mensagem por campanha.
         </p>
       </Modal>
 
@@ -371,7 +417,7 @@ export function FollowupCampaignsPage() {
           setConfirmStart(null);
         }}
         title="Iniciar campanha real"
-        message={`${confirmStart?.eligibleContacts || audience?.eligible || 0} contatos poderão receber este template. Confirme somente após executar o Modo Teste.`}
+        message={`${confirmStart?.eligibleContacts || 0} contatos do público “${confirmStart?.audienceList?.name ?? 'selecionado'}” poderão receber este template. Confirme somente após executar o Modo Teste.`}
         confirmLabel="INICIAR CAMPANHA"
       />
     </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Button, Table, Badge, Alert, ConfirmDialog } from '../components/index.js';
+import { Button, Table, Badge, Alert, ConfirmDialog, Input } from '../components/index.js';
 
 const API = import.meta.env.VITE_API_URL ?? '';
 
@@ -31,6 +31,7 @@ interface ImportRecord {
   type: string;
   status: string;
   filename: string;
+  audienceName: string | null;
   totalRows: number;
   processedRows: number;
   errorRows: number;
@@ -55,6 +56,7 @@ export function ImportsPage() {
   const [step, setStep] = useState<'list' | 'upload' | 'preview' | 'processing'>('list');
   const [importType, setImportType] = useState<'contacts' | 'participations'>('contacts');
   const [file, setFile] = useState<File | null>(null);
+  const [audienceName, setAudienceName] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
@@ -84,6 +86,7 @@ export function ImportsPage() {
     setFile(null);
     setPreview(null);
     setImportType('contacts');
+    setAudienceName('');
   }
 
   async function handleUpload() {
@@ -94,6 +97,7 @@ export function ImportsPage() {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('type', importType);
+      if (importType === 'contacts') formData.append('audienceName', audienceName.trim());
 
       const res = await fetch(`${API}/api/imports/preview`, {
         method: 'POST',
@@ -167,6 +171,11 @@ export function ImportsPage() {
   const historyColumns = [
     { key: 'filename', header: 'Arquivo' },
     {
+      key: 'audienceName',
+      header: 'Grupo',
+      render: (i: ImportRecord) => i.audienceName || '—',
+    },
+    {
       key: 'type',
       header: 'Tipo',
       render: (i: ImportRecord) => TYPE_LABELS[i.type] ?? i.type,
@@ -227,6 +236,15 @@ export function ImportsPage() {
             </select>
           </div>
 
+          {importType === 'contacts' && (
+            <Input
+              label="Nome do grupo de contatos"
+              value={audienceName}
+              onChange={(event) => setAudienceName(event.target.value)}
+              placeholder="Ex.: Grupo 2 ou Alunos de agosto"
+            />
+          )}
+
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
@@ -258,7 +276,11 @@ export function ImportsPage() {
             )}
           </div>
 
-          <Button onClick={handleUpload} disabled={!file} loading={uploading}>
+          <Button
+            onClick={handleUpload}
+            disabled={!file || (importType === 'contacts' && !audienceName.trim())}
+            loading={uploading}
+          >
             Enviar e Visualizar
           </Button>
         </div>
@@ -267,6 +289,12 @@ export function ImportsPage() {
       {step === 'preview' && preview && (
         <div className="card">
           <h3 style={{ marginBottom: '1rem' }}>Previa da Importacao</h3>
+
+          {preview.import.audienceName && (
+            <p style={{ marginBottom: '1rem' }}>
+              Grupo: <strong>{preview.import.audienceName}</strong>
+            </p>
+          )}
 
           <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
             <div>
