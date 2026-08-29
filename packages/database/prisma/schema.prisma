@@ -48,19 +48,19 @@ model AdminUser {
   role     Role      @relation(fields: [roleId], references: [id])
   sessions Session[]
 
-  campaignsCreated Campaign[]
-  templatesCreated MessageTemplate[]
-  flowsCreated     FlowDefinition[]
-  importsCreated   Import[]
-  docsCreated      KnowledgeDocument[]
+  campaignsCreated         Campaign[]
+  templatesCreated         MessageTemplate[]
+  flowsCreated             FlowDefinition[]
+  importsCreated           Import[]
+  docsCreated              KnowledgeDocument[]
   followupCampaignsCreated FollowupCampaign[]
 
   redirectLinksCreated  RedirectLink[]
   conversationsAssigned Conversation[]
   handoffsAssigned      HumanHandoff[]
 
-  auditLogs    AuditLog[]
-  systemEdits  SystemSetting[] @relation("updatedByAdmin")
+  auditLogs   AuditLog[]
+  systemEdits SystemSetting[] @relation("updatedByAdmin")
 
   @@map("admin_users")
 }
@@ -83,35 +83,35 @@ model Session {
 // ─── Contacts ────────────────────────────────────────────────────────
 
 model Contact {
-  id                 String    @id @default(uuid())
-  phone              String?   @unique
-  email              String?
-  name               String    @default("")
-  normalizedPhone    String?   @map("normalized_phone")
-  firstSeenAt        DateTime  @default(now()) @map("first_seen_at")
-  lastSeenAt         DateTime  @default(now()) @map("last_seen_at")
-  totalParticipations Int      @default(0) @map("total_participations")
-  totalPurchases     Int       @default(0) @map("total_purchases")
-  isStudent          Boolean   @default(false) @map("is_student")
-  metadata           Json?
-  phoneRaw           String?   @map("phone_raw")
-  source             String    @default("meteorico_grupo")
-  campaignSource     String    @default("") @map("campaign_source")
-  purchaseStatus     String    @default("unknown") @map("purchase_status")
-  optOutAt           DateTime? @map("opt_out_at")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
+  id                  String    @id @default(uuid())
+  phone               String?   @unique
+  email               String?
+  name                String    @default("")
+  normalizedPhone     String?   @map("normalized_phone")
+  firstSeenAt         DateTime  @default(now()) @map("first_seen_at")
+  lastSeenAt          DateTime  @default(now()) @map("last_seen_at")
+  totalParticipations Int       @default(0) @map("total_participations")
+  totalPurchases      Int       @default(0) @map("total_purchases")
+  isStudent           Boolean   @default(false) @map("is_student")
+  metadata            Json?
+  phoneRaw            String?   @map("phone_raw")
+  source              String    @default("meteorico_grupo")
+  campaignSource      String    @default("") @map("campaign_source")
+  purchaseStatus      String    @default("unknown") @map("purchase_status")
+  optOutAt            DateTime? @map("opt_out_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
 
-  identifiers    ContactIdentifier[]
-  participations CampaignParticipation[]
-  memberships    GroupMembership[]
-  groupEvents    GroupEvent[]
-  conversations  Conversation[]
-  purchases      Purchase[]
-  studentStatuses StudentStatus[]
-  trackingClicks TrackingClick[]
-  diagnoses      Diagnosis[]
-  preferences    ContactPreference[]
+  identifiers      ContactIdentifier[]
+  participations   CampaignParticipation[]
+  memberships      GroupMembership[]
+  groupEvents      GroupEvent[]
+  conversations    Conversation[]
+  purchases        Purchase[]
+  studentStatuses  StudentStatus[]
+  trackingClicks   TrackingClick[]
+  diagnoses        Diagnosis[]
+  preferences      ContactPreference[]
   followupMessages FollowupCampaignMessage[]
 
   @@index([normalizedPhone])
@@ -136,21 +136,21 @@ model ContactIdentifier {
 // ─── Campaigns ───────────────────────────────────────────────────────
 
 model Campaign {
-  id                 String    @id @default(uuid())
-  name               String
-  slug               String    @unique
-  editionNumber      Int?      @unique @map("edition_number")
-  status             String    @default("draft")
-  timezone           String    @default("America/Sao_Paulo")
-  cartOpenDay        String    @default("wednesday") @map("cart_open_day")
-  captationStartsAt  DateTime? @map("captation_starts_at")
-  startsAt           DateTime? @map("starts_at")
-  endsAt             DateTime? @map("ends_at")
-  createdBy          String    @map("created_by")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
+  id                String    @id @default(uuid())
+  name              String
+  slug              String    @unique
+  editionNumber     Int?      @unique @map("edition_number")
+  status            String    @default("draft")
+  timezone          String    @default("America/Sao_Paulo")
+  cartOpenDay       String    @default("wednesday") @map("cart_open_day")
+  captationStartsAt DateTime? @map("captation_starts_at")
+  startsAt          DateTime? @map("starts_at")
+  endsAt            DateTime? @map("ends_at")
+  createdBy         String    @map("created_by")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  creator        AdminUser @relation(fields: [createdBy], references: [id])
+  creator        AdminUser               @relation(fields: [createdBy], references: [id])
   versions       CampaignVersion[]
   participations CampaignParticipation[]
   groups         Group[]
@@ -162,27 +162,28 @@ model Campaign {
 // ─── WhatsApp Follow-up CRM ─────────────────────────────────────────
 
 model FollowupCampaign {
-  id                String    @id @default(uuid())
-  name              String
-  templateName      String    @map("template_name")
-  templateLanguage  String    @default("pt_BR") @map("template_language")
-  offerUrl          String?   @map("offer_url")
-  status            String    @default("draft")
-  totalContacts     Int       @default(0) @map("total_contacts")
-  eligibleContacts  Int       @default(0) @map("eligible_contacts")
-  queuedCount       Int       @default(0) @map("queued_count")
-  submittedCount    Int       @default(0) @map("submitted_count")
-  sentCount         Int       @default(0) @map("sent_count")
-  deliveredCount    Int       @default(0) @map("delivered_count")
-  readCount         Int       @default(0) @map("read_count")
-  failedCount       Int       @default(0) @map("failed_count")
-  repliedCount      Int       @default(0) @map("replied_count")
-  optOutCount       Int       @default(0) @map("opt_out_count")
-  createdBy         String    @map("created_by")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  startedAt         DateTime? @map("started_at")
-  finishedAt        DateTime? @map("finished_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
+  id                 String    @id @default(uuid())
+  name               String
+  templateName       String    @map("template_name")
+  templateLanguage   String    @default("pt_BR") @map("template_language")
+  offerUrl           String?   @map("offer_url")
+  templateParameters Json?     @map("template_parameters")
+  status             String    @default("draft")
+  totalContacts      Int       @default(0) @map("total_contacts")
+  eligibleContacts   Int       @default(0) @map("eligible_contacts")
+  queuedCount        Int       @default(0) @map("queued_count")
+  submittedCount     Int       @default(0) @map("submitted_count")
+  sentCount          Int       @default(0) @map("sent_count")
+  deliveredCount     Int       @default(0) @map("delivered_count")
+  readCount          Int       @default(0) @map("read_count")
+  failedCount        Int       @default(0) @map("failed_count")
+  repliedCount       Int       @default(0) @map("replied_count")
+  optOutCount        Int       @default(0) @map("opt_out_count")
+  createdBy          String    @map("created_by")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  startedAt          DateTime? @map("started_at")
+  finishedAt         DateTime? @map("finished_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   creator  AdminUser                 @relation(fields: [createdBy], references: [id])
   messages FollowupCampaignMessage[]
@@ -192,23 +193,23 @@ model FollowupCampaign {
 }
 
 model FollowupCampaignMessage {
-  id                String    @id @default(uuid())
-  campaignId        String    @map("campaign_id")
-  contactId         String    @map("contact_id")
-  metaMessageId     String?   @unique @map("meta_message_id")
-  status            String    @default("queued")
-  errorCode         String?   @map("error_code")
-  errorMessage      String?   @map("error_message")
-  attempts          Int       @default(0)
-  nextAttemptAt     DateTime? @map("next_attempt_at")
-  submittedAt       DateTime? @map("submitted_at")
-  sentAt            DateTime? @map("sent_at")
-  deliveredAt       DateTime? @map("delivered_at")
-  readAt            DateTime? @map("read_at")
-  failedAt          DateTime? @map("failed_at")
-  repliedAt         DateTime? @map("replied_at")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
+  id            String    @id @default(uuid())
+  campaignId    String    @map("campaign_id")
+  contactId     String    @map("contact_id")
+  metaMessageId String?   @unique @map("meta_message_id")
+  status        String    @default("queued")
+  errorCode     String?   @map("error_code")
+  errorMessage  String?   @map("error_message")
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime? @map("next_attempt_at")
+  submittedAt   DateTime? @map("submitted_at")
+  sentAt        DateTime? @map("sent_at")
+  deliveredAt   DateTime? @map("delivered_at")
+  readAt        DateTime? @map("read_at")
+  failedAt      DateTime? @map("failed_at")
+  repliedAt     DateTime? @map("replied_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
 
   campaign FollowupCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   contact  Contact          @relation(fields: [contactId], references: [id])
@@ -246,9 +247,9 @@ model CampaignParticipation {
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
-  contact       Contact  @relation(fields: [contactId], references: [id])
-  campaign      Campaign @relation(fields: [campaignId], references: [id])
-  group         Group?   @relation(fields: [groupId], references: [id])
+  contact       Contact           @relation(fields: [contactId], references: [id])
+  campaign      Campaign          @relation(fields: [campaignId], references: [id])
+  group         Group?            @relation(fields: [groupId], references: [id])
   attributions  LeadAttribution[]
   conversations Conversation[]
   purchases     Purchase[]
@@ -274,7 +275,7 @@ model Group {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  campaign       Campaign @relation(fields: [campaignId], references: [id])
+  campaign       Campaign                @relation(fields: [campaignId], references: [id])
   participations CampaignParticipation[]
   memberships    GroupMembership[]
   events         GroupEvent[]
@@ -300,15 +301,15 @@ model GroupMembership {
 }
 
 model GroupEvent {
-  id               String    @id @default(uuid())
-  groupId          String    @map("group_id")
-  contactId        String?   @map("contact_id")
-  eventType        String    @map("event_type")
-  whatsappEventId  String?   @unique @map("whatsapp_event_id")
-  rawPayload       Json?     @map("raw_payload")
-  occurredAt       DateTime  @map("occurred_at")
-  processedAt      DateTime? @map("processed_at")
-  createdAt        DateTime  @default(now()) @map("created_at")
+  id              String    @id @default(uuid())
+  groupId         String    @map("group_id")
+  contactId       String?   @map("contact_id")
+  eventType       String    @map("event_type")
+  whatsappEventId String?   @unique @map("whatsapp_event_id")
+  rawPayload      Json?     @map("raw_payload")
+  occurredAt      DateTime  @map("occurred_at")
+  processedAt     DateTime? @map("processed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
 
   group   Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
   contact Contact? @relation(fields: [contactId], references: [id])
@@ -436,29 +437,45 @@ model ConversationMessage {
 }
 
 model MessageTemplate {
-  id        String   @id @default(uuid())
-  name      String
-  category  String   @default("")
-  isActive  Boolean  @default(true) @map("is_active")
-  createdBy String   @map("created_by")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id                  String    @id @default(uuid())
+  name                String
+  label               String    @default("")
+  language            String    @default("pt_BR")
+  category            String    @default("")
+  requestedCategory   String    @default("") @map("requested_category")
+  metaCategory        String?   @map("meta_category")
+  metaStatus          String    @default("DRAFT") @map("meta_status")
+  metaTemplateId      String?   @unique @map("meta_template_id")
+  metaRejectedReason  String?   @map("meta_rejected_reason")
+  metaQualityRating   String?   @map("meta_quality_rating")
+  allowCategoryChange Boolean   @default(true) @map("allow_category_change")
+  submittedAt         DateTime? @map("submitted_at")
+  metaSyncedAt        DateTime? @map("meta_synced_at")
+  isActive            Boolean   @default(true) @map("is_active")
+  createdBy           String    @map("created_by")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
 
   creator  AdminUser                @relation(fields: [createdBy], references: [id])
   versions MessageTemplateVersion[]
   messages ConversationMessage[]
 
+  @@index([name, language])
+  @@index([metaStatus, language])
   @@map("message_templates")
 }
 
 model MessageTemplateVersion {
-  id         String   @id @default(uuid())
-  templateId String   @map("template_id")
-  version    Int
-  content    String
-  variables  Json?
-  isCurrent  Boolean  @default(false) @map("is_current")
-  createdAt  DateTime @default(now()) @map("created_at")
+  id            String   @id @default(uuid())
+  templateId    String   @map("template_id")
+  version       Int
+  content       String
+  footer        String   @default("")
+  variables     Json?
+  components    Json?
+  exampleValues Json?    @map("example_values")
+  isCurrent     Boolean  @default(false) @map("is_current")
+  createdAt     DateTime @default(now()) @map("created_at")
 
   template MessageTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
@@ -469,26 +486,26 @@ model MessageTemplateVersion {
 // ─── Redirect Links ─────────────────────────────────────────────────
 
 model RedirectLink {
-  id              String    @id @default(uuid())
-  code            String    @unique
-  campaignId      String    @map("campaign_id")
-  destinationUrl  String    @map("destination_url")
-  utmSource       String    @default("") @map("utm_source")
-  utmMedium       String    @default("") @map("utm_medium")
-  utmCampaign     String    @default("") @map("utm_campaign")
-  utmContent      String    @default("") @map("utm_content")
-  fbclid          String    @default("")
-  metaCampaignId  String?   @map("meta_campaign_id")
-  metaAdsetId     String?   @map("meta_adset_id")
-  metaAdId        String?   @map("meta_ad_id")
-  creativeId      String?   @map("creative_id")
-  placement       String?
-  maxUses         Int?      @map("max_uses")
-  usedCount       Int       @default(0) @map("used_count")
-  expiresAt       DateTime? @map("expires_at")
-  isActive        Boolean   @default(true) @map("is_active")
-  createdBy       String    @map("created_by")
-  createdAt       DateTime  @default(now()) @map("created_at")
+  id             String    @id @default(uuid())
+  code           String    @unique
+  campaignId     String    @map("campaign_id")
+  destinationUrl String    @map("destination_url")
+  utmSource      String    @default("") @map("utm_source")
+  utmMedium      String    @default("") @map("utm_medium")
+  utmCampaign    String    @default("") @map("utm_campaign")
+  utmContent     String    @default("") @map("utm_content")
+  fbclid         String    @default("")
+  metaCampaignId String?   @map("meta_campaign_id")
+  metaAdsetId    String?   @map("meta_adset_id")
+  metaAdId       String?   @map("meta_ad_id")
+  creativeId     String?   @map("creative_id")
+  placement      String?
+  maxUses        Int?      @map("max_uses")
+  usedCount      Int       @default(0) @map("used_count")
+  expiresAt      DateTime? @map("expires_at")
+  isActive       Boolean   @default(true) @map("is_active")
+  createdBy      String    @map("created_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
 
   campaign Campaign        @relation(fields: [campaignId], references: [id])
   creator  AdminUser       @relation(fields: [createdBy], references: [id])
@@ -501,14 +518,14 @@ model RedirectLink {
 // ─── Contact Preferences ────────────────────────────────────────────
 
 model ContactPreference {
-  id        String   @id @default(uuid())
-  contactId String   @map("contact_id")
-  channel   String   @default("whatsapp")
-  optedOut  Boolean  @default(false) @map("opted_out")
+  id        String    @id @default(uuid())
+  contactId String    @map("contact_id")
+  channel   String    @default("whatsapp")
+  optedOut  Boolean   @default(false) @map("opted_out")
   blockedAt DateTime? @map("blocked_at")
-  reason    String   @default("")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  reason    String    @default("")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
   contact Contact @relation(fields: [contactId], references: [id])
 
@@ -559,15 +576,15 @@ model FlowStep {
   nextStepId    String?  @map("next_step_id")
   createdAt     DateTime @default(now()) @map("created_at")
 
-  flowVersion FlowVersion @relation(fields: [flowVersionId], references: [id], onDelete: Cascade)
+  flowVersion FlowVersion  @relation(fields: [flowVersionId], references: [id], onDelete: Cascade)
   buttons     FlowButton[]
 
   @@map("flow_steps")
 }
 
 model FlowButton {
-  id         String @id @default(uuid())
-  stepId     String @map("step_id")
+  id         String  @id @default(uuid())
+  stepId     String  @map("step_id")
   label      String
   value      String
   nextStepId String? @map("next_step_id")

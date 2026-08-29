@@ -9,6 +9,9 @@ interface Template {
   language: string;
   requiresUrl: boolean;
   preview: string;
+  parameterCount: number;
+  examples: string[];
+  category: string;
 }
 
 interface Audience {
@@ -67,7 +70,7 @@ export function FollowupCampaignsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [name, setName] = useState('');
   const [templateName, setTemplateName] = useState('meteorico_acompanhamento');
-  const [offerUrl, setOfferUrl] = useState('');
+  const [templateParameters, setTemplateParameters] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [confirmStart, setConfirmStart] = useState<FollowupCampaign | null>(null);
 
@@ -75,7 +78,15 @@ export function FollowupCampaignsPage() {
     () => templates.find((template) => template.name === templateName),
     [templates, templateName],
   );
-  const renderedPreview = selectedTemplate?.preview.replace('{{1}}', offerUrl || 'https://sua-oferta.com') ?? '';
+  const renderedPreview = selectedTemplate
+    ? selectedTemplate.preview.replace(
+        /\{\{(\d+)\}\}/g,
+        (token, rawIndex: string) =>
+          templateParameters[Number(rawIndex) - 1] ||
+          selectedTemplate.examples[Number(rawIndex) - 1] ||
+          token,
+      )
+    : '';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,7 +114,22 @@ export function FollowupCampaignsPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
+  useEffect(() => {
+    if (templates.length === 0) return;
+    if (!templates.some((template) => template.name === templateName))
+      setTemplateName(templates[0].name);
+  }, [templates, templateName]);
+  useEffect(() => {
+    setTemplateParameters(
+      Array.from(
+        { length: selectedTemplate?.parameterCount ?? 0 },
+        (_, index) => selectedTemplate?.examples[index] ?? '',
+      ),
+    );
+  }, [selectedTemplate?.name, selectedTemplate?.parameterCount]);
   useEffect(() => {
     if (!campaigns.some((campaign) => campaign.status === 'running')) return;
     const timer = window.setInterval(load, 5000);
@@ -118,12 +144,12 @@ export function FollowupCampaignsPage() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, templateName, offerUrl: offerUrl || null }),
+        body: JSON.stringify({ name, templateName, templateParameters }),
       });
       if (!response.ok) throw new Error(await responseMessage(response));
       setShowCreate(false);
       setName('');
-      setOfferUrl('');
+      setTemplateParameters([]);
       setSuccess('Campanha criada. Execute o Modo Teste antes do envio real.');
       await load();
     } catch (caught) {
@@ -133,7 +159,10 @@ export function FollowupCampaignsPage() {
     }
   }
 
-  async function action(campaign: FollowupCampaign, actionName: 'dry-run' | 'start' | 'pause' | 'resume') {
+  async function action(
+    campaign: FollowupCampaign,
+    actionName: 'dry-run' | 'start' | 'pause' | 'resume',
+  ) {
     setError('');
     setSuccess('');
     try {
@@ -144,9 +173,17 @@ export function FollowupCampaignsPage() {
       if (!response.ok) throw new Error(await responseMessage(response));
       if (actionName === 'dry-run') {
         const result = await response.json();
-        setSuccess(`Modo Teste concluído: ${result.audience.eligible} elegíveis, ${result.audience.excluded} excluídos e nenhuma mensagem enviada.`);
+        setSuccess(
+          `Modo Teste concluído: ${result.audience.eligible} elegíveis, ${result.audience.excluded} excluídos e nenhuma mensagem enviada.`,
+        );
       } else {
-        setSuccess(actionName === 'start' ? 'Campanha iniciada.' : actionName === 'pause' ? 'Campanha pausada.' : 'Campanha retomada.');
+        setSuccess(
+          actionName === 'start'
+            ? 'Campanha iniciada.'
+            : actionName === 'pause'
+              ? 'Campanha pausada.'
+              : 'Campanha retomada.',
+        );
       }
       await load();
     } catch (caught) {
@@ -161,7 +198,9 @@ export function FollowupCampaignsPage() {
       key: 'status',
       header: 'Status',
       render: (campaign: FollowupCampaign) => (
-        <Badge variant={STATUS_VARIANTS[campaign.status] ?? 'neutral'}>{STATUS_LABELS[campaign.status] ?? campaign.status}</Badge>
+        <Badge variant={STATUS_VARIANTS[campaign.status] ?? 'neutral'}>
+          {STATUS_LABELS[campaign.status] ?? campaign.status}
+        </Badge>
       ),
     },
     { key: 'eligibleContacts', header: 'Elegíveis' },
@@ -175,18 +214,31 @@ export function FollowupCampaignsPage() {
       render: (campaign: FollowupCampaign) => (
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
           {['draft', 'ready'].includes(campaign.status) && (
-            <Button size="sm" variant="secondary" onClick={() => action(campaign, 'dry-run')}>Modo Teste</Button>
+            <Button size="sm" variant="secondary" onClick={() => action(campaign, 'dry-run')}>
+              Modo Teste
+            </Button>
           )}
           {['draft', 'ready'].includes(campaign.status) && (
-            <Button size="sm" onClick={() => setConfirmStart(campaign)}>Iniciar</Button>
+            <Button size="sm" onClick={() => setConfirmStart(campaign)}>
+              Iniciar
+            </Button>
           )}
           {campaign.status === 'running' && (
-            <Button size="sm" variant="secondary" onClick={() => action(campaign, 'pause')}>Pausar</Button>
+            <Button size="sm" variant="secondary" onClick={() => action(campaign, 'pause')}>
+              Pausar
+            </Button>
           )}
           {campaign.status === 'paused' && (
-            <Button size="sm" onClick={() => action(campaign, 'resume')}>Continuar</Button>
+            <Button size="sm" onClick={() => action(campaign, 'resume')}>
+              Continuar
+            </Button>
           )}
-          <a className="btn btn-secondary btn-sm" href={`${API}/api/followup/campaigns/${campaign.id}/export.csv`}>Exportar CSV</a>
+          <a
+            className="btn btn-secondary btn-sm"
+            href={`${API}/api/followup/campaigns/${campaign.id}/export.csv`}
+          >
+            Exportar CSV
+          </a>
         </div>
       ),
     },
@@ -197,16 +249,32 @@ export function FollowupCampaignsPage() {
       <div className="content-header">
         <div>
           <h1 className="content-title">Follow-up via WhatsApp</h1>
-          <p className="content-subtitle">Campanhas oficiais por template, com opt-out e proteção contra duplicidade</p>
+          <p className="content-subtitle">
+            Campanhas oficiais por template, com opt-out e proteção contra duplicidade
+          </p>
         </div>
         <Button onClick={() => setShowCreate(true)}>+ Nova campanha</Button>
       </div>
 
-      {error && <Alert variant="danger" onDismiss={() => setError('')}>{error}</Alert>}
-      {success && <Alert variant="success" onDismiss={() => setSuccess('')}>{success}</Alert>}
+      {error && (
+        <Alert variant="danger" onDismiss={() => setError('')}>
+          {error}
+        </Alert>
+      )}
+      {success && (
+        <Alert variant="success" onDismiss={() => setSuccess('')}>
+          {success}
+        </Alert>
+      )}
 
       {audience && (
-        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', marginBottom: '1rem' }}>
+        <div
+          className="grid gap-4"
+          style={{
+            gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+            marginBottom: '1rem',
+          }}
+        >
           <Metric label="Total de contatos" value={audience.total} />
           <Metric label="Elegíveis" value={audience.eligible} />
           <Metric label="Compradores" value={audience.buyers} />
@@ -216,8 +284,14 @@ export function FollowupCampaignsPage() {
       )}
 
       <div className="card">
-        {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Carregando...</div> : (
-          <Table columns={columns} data={campaigns} emptyMessage="Nenhuma campanha de follow-up criada" />
+        {loading ? (
+          <div style={{ padding: '2rem', textAlign: 'center' }}>Carregando...</div>
+        ) : (
+          <Table
+            columns={columns}
+            data={campaigns}
+            emptyMessage="Nenhuma campanha de follow-up criada"
+          />
         )}
       </div>
 
@@ -225,24 +299,67 @@ export function FollowupCampaignsPage() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         title="Nova campanha"
-        footer={<><Button variant="secondary" onClick={() => setShowCreate(false)}>Cancelar</Button><Button loading={saving} onClick={createCampaign}>Criar campanha</Button></>}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowCreate(false)}>
+              Cancelar
+            </Button>
+            <Button loading={saving} onClick={createCampaign}>
+              Criar campanha
+            </Button>
+          </>
+        }
       >
-        <Input label="Nome da campanha" value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex.: Oferta Meteórico — agosto" />
+        <Input
+          label="Nome da campanha"
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="Ex.: Oferta Meteórico — agosto"
+        />
         <div className="form-group">
           <label>Template aprovado</label>
-          <select className="input" value={templateName} onChange={(event) => setTemplateName(event.target.value)}>
-            {templates.map((template) => <option key={template.name} value={template.name}>{template.label}</option>)}
+          <select
+            className="input"
+            value={templateName}
+            onChange={(event) => setTemplateName(event.target.value)}
+          >
+            {templates.map((template) => (
+              <option key={template.name} value={template.name}>
+                {template.label}
+              </option>
+            ))}
           </select>
         </div>
-        {selectedTemplate?.requiresUrl && (
-          <Input label="URL da oferta (HTTPS)" value={offerUrl} onChange={(event) => setOfferUrl(event.target.value)} placeholder="https://..." />
-        )}
-        <div className="card" style={{ marginTop: '1rem', whiteSpace: 'pre-wrap', background: 'var(--bg-secondary)' }}>
-          <p className="text-sm text-secondary" style={{ marginBottom: '0.6rem' }}>PRÉVIA</p>
+        {Array.from({ length: selectedTemplate?.parameterCount ?? 0 }, (_, index) => (
+          <Input
+            key={index}
+            label={`${selectedTemplate?.requiresUrl && index === 0 ? 'URL HTTPS' : 'Valor'} para {{${index + 1}}}`}
+            value={templateParameters[index] ?? ''}
+            onChange={(event) =>
+              setTemplateParameters((current) =>
+                current.map((value, itemIndex) =>
+                  itemIndex === index ? event.target.value : value,
+                ),
+              )
+            }
+            placeholder={
+              selectedTemplate?.examples[index] ||
+              (selectedTemplate?.requiresUrl && index === 0 ? 'https://...' : 'Valor da variável')
+            }
+          />
+        ))}
+        <div
+          className="card"
+          style={{ marginTop: '1rem', whiteSpace: 'pre-wrap', background: 'var(--bg-secondary)' }}
+        >
+          <p className="text-sm text-secondary" style={{ marginBottom: '0.6rem' }}>
+            PRÉVIA
+          </p>
           {renderedPreview}
         </div>
         <p className="text-sm text-secondary" style={{ marginTop: '1rem' }}>
-          {audience?.eligible ?? 0} contatos elegíveis neste momento. O nome importado não será usado na mensagem.
+          {audience?.eligible ?? 0} contatos elegíveis neste momento. O nome importado não será
+          usado na mensagem.
         </p>
       </Modal>
 
@@ -262,10 +379,15 @@ export function FollowupCampaignsPage() {
 }
 
 function Metric({ label, value }: { label: string; value: number }) {
-  return <div className="card"><p className="text-sm text-secondary">{label}</p><p className="text-2xl font-bold">{value}</p></div>;
+  return (
+    <div className="card">
+      <p className="text-sm text-secondary">{label}</p>
+      <p className="text-2xl font-bold">{value}</p>
+    </div>
+  );
 }
 
 async function responseMessage(response: Response): Promise<string> {
-  const body = await response.json().catch(() => null) as { message?: string } | null;
+  const body = (await response.json().catch(() => null)) as { message?: string } | null;
   return body?.message ?? 'A operação falhou';
 }

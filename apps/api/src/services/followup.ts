@@ -47,20 +47,110 @@ export function validateFollowupCampaignInput(input: {
   if (!input.name.trim() || input.name.trim().length > 160) {
     throw new Error('Informe um nome de campanha válido');
   }
-
   const template = getFollowupTemplate(input.templateName);
   if (!template) throw new Error('Template não permitido');
+  if (!template.requiresUrl) return;
+  if (!input.offerUrl) throw new Error('Este template exige a URL da oferta');
+  let url: URL;
+  try {
+    url = new URL(input.offerUrl);
+  } catch {
+    throw new Error('Informe uma URL de oferta válida');
+  }
+  if (url.protocol !== 'https:') throw new Error('A URL da oferta deve usar HTTPS');
+}
+
+export async function getAvailableFollowupTemplates(db: PrismaClient) {
+  const managed = await db.messageTemplate.findMany({
+    where: {
+      isActive: true,
+      metaStatus: 'APPROVED',
+      language: 'pt_BR',
+      metaCategory: { in: ['MARKETING', 'UTILITY'] },
+    },
+    include: { versions: { where: { isCurrent: true }, take: 1 } },
+    orderBy: { updatedAt: 'desc' },
+  });
+  const result = managed
+    .filter((template) => {
+      const content = template.versions[0]?.content;
+      return Boolean(content) && !/\{\{(?!\d+\}\})/.test(content!);
+    })
+    .map((template) => {
+      const preview = template.versions[0]!.content;
+      const parameterCount = extractParameterCount(preview);
+      const examples = Array.isArray(template.versions[0]!.exampleValues)
+        ? template.versions[0]!.exampleValues.map(String)
+        : [];
+      return {
+        name: template.name,
+        language: template.language,
+        label: template.label || template.name,
+        preview,
+        parameterCount,
+        examples,
+        requiresUrl: parameterCount > 0 && /\b(link|url|acesse|acessar)\b/i.test(preview),
+        category: template.metaCategory || template.requestedCategory || template.category,
+        status: 'approved' as const,
+      };
+    });
+
+  const known = new Set(result.map((template) => template.name));
+  const approvedNames = new Set(
+    (process.env.META_APPROVED_TEMPLATE_NAMES ?? '')
+      .split(',')
+      .map((name) => name.trim())
+      .filter(Boolean),
+  );
+  for (const legacy of FOLLOWUP_TEMPLATES) {
+    if (known.has(legacy.name) || !approvedNames.has(legacy.name)) continue;
+    result.push({
+      ...legacy,
+      parameterCount: extractParameterCount(legacy.preview),
+      examples: legacy.requiresUrl ? ['https://sua-oferta.com'] : [],
+      category: 'MARKETING',
+      status: 'approved' as const,
+    });
+  }
+  return result;
+}
+
+export async function validateFollowupCampaignWithDb(
+  db: PrismaClient,
+  input: {
+    name: string;
+    templateName: string;
+    offerUrl?: string | null;
+    templateParameters?: unknown;
+  },
+) {
+  if (!input.name.trim() || input.name.trim().length > 160) {
+    throw new Error('Informe um nome de campanha válido');
+  }
+
+  const templates = await getAvailableFollowupTemplates(db);
+  const template = templates.find((candidate) => candidate.name === input.templateName);
+  if (!template) throw new Error('Escolha um template aprovado pela Meta');
+
+  const parameters = readTemplateParameters(input.templateParameters, input.offerUrl);
+  if (parameters.length !== template.parameterCount) {
+    throw new Error(`Este template exige ${template.parameterCount} valor(es) de variável`);
+  }
+  if (parameters.some((value) => !value.trim()))
+    throw new Error('Preencha todos os valores do template');
 
   if (template.requiresUrl) {
-    if (!input.offerUrl) throw new Error('Este template exige a URL da oferta');
+    const candidate = parameters[0];
+    if (!candidate) throw new Error('Este template exige uma URL HTTPS');
     let url: URL;
     try {
-      url = new URL(input.offerUrl);
+      url = new URL(candidate);
     } catch {
-      throw new Error('Informe uma URL de oferta válida');
+      throw new Error('Informe uma URL válida para a primeira variável');
     }
     if (url.protocol !== 'https:') throw new Error('A URL da oferta deve usar HTTPS');
   }
+  return { template, parameters };
 }
 
 export async function getAudienceStats(db: PrismaClient) {
@@ -181,7 +271,7 @@ export async function processFollowupBatch(db: PrismaClient, campaignId: string,
         to: phone,
         templateName: campaign.templateName,
         language: campaign.templateLanguage,
-        offerUrl: campaign.offerUrl,
+        parameters: readTemplateParameters(campaign.templateParameters, campaign.offerUrl),
       });
       await db.followupCampaignMessage.update({
         where: { id: message.id },
@@ -220,14 +310,26 @@ export async function processFollowupBatch(db: PrismaClient, campaignId: string,
 
 export async function handleFollowupDeliveryStatus(
   db: PrismaClient,
-  status: { externalMessageId: string; status: 'sent' | 'delivered' | 'read' | 'failed'; timestamp: string; error?: string },
+  status: {
+    externalMessageId: string;
+    status: 'sent' | 'delivered' | 'read' | 'failed';
+    timestamp: string;
+    error?: string;
+  },
 ) {
   const existing = await db.followupCampaignMessage.findUnique({
     where: { metaMessageId: status.externalMessageId },
   });
   if (!existing) return null;
 
-  const ranks: Record<string, number> = { queued: 0, processing: 1, submitted: 2, sent: 3, delivered: 4, read: 5 };
+  const ranks: Record<string, number> = {
+    queued: 0,
+    processing: 1,
+    submitted: 2,
+    sent: 3,
+    delivered: 4,
+    read: 5,
+  };
   if (status.status !== 'failed' && (ranks[status.status] ?? 0) < (ranks[existing.status] ?? 0)) {
     return existing;
   }
@@ -241,7 +343,11 @@ export async function handleFollowupDeliveryStatus(
       ...(status.status === 'delivered' ? { deliveredAt: at } : {}),
       ...(status.status === 'read' ? { readAt: at } : {}),
       ...(status.status === 'failed'
-        ? { failedAt: at, errorCode: status.error ?? 'meta_delivery_failed', errorMessage: 'Falha reportada pela Meta' }
+        ? {
+            failedAt: at,
+            errorCode: status.error ?? 'meta_delivery_failed',
+            errorMessage: 'Falha reportada pela Meta',
+          }
         : {}),
     },
   });
@@ -265,15 +371,27 @@ export async function handleFollowupInbound(
     await db.$transaction([
       db.contactPreference.upsert({
         where: { contactId_channel: { contactId: input.contactId, channel: 'whatsapp' } },
-        create: { contactId: input.contactId, channel: 'whatsapp', optedOut: true, blockedAt: new Date(input.receivedAt), reason: 'keyword' },
+        create: {
+          contactId: input.contactId,
+          channel: 'whatsapp',
+          optedOut: true,
+          blockedAt: new Date(input.receivedAt),
+          reason: 'keyword',
+        },
         update: { optedOut: true, blockedAt: new Date(input.receivedAt), reason: 'keyword' },
       }),
-      db.contact.update({ where: { id: input.contactId }, data: { optOutAt: new Date(input.receivedAt) } }),
+      db.contact.update({
+        where: { id: input.contactId },
+        data: { optOutAt: new Date(input.receivedAt) },
+      }),
     ]);
   }
 
   const latest = await db.followupCampaignMessage.findFirst({
-    where: { contactId: input.contactId, status: { in: ['submitted', 'sent', 'delivered', 'read'] } },
+    where: {
+      contactId: input.contactId,
+      status: { in: ['submitted', 'sent', 'delivered', 'read'] },
+    },
     orderBy: { submittedAt: 'desc' },
   });
   if (!latest) return { isOptOut, campaignId: null };
@@ -303,7 +421,10 @@ export async function refreshFollowupCampaignMetrics(db: PrismaClient, campaignI
     db.followupCampaignMessage.count({ where: { campaignId } }),
     db.followupCampaignMessage.count({ where: { campaignId, repliedAt: { not: null } } }),
     db.followupCampaignMessage.count({
-      where: { campaignId, contact: { preferences: { some: { channel: 'whatsapp', optedOut: true } } } },
+      where: {
+        campaignId,
+        contact: { preferences: { some: { channel: 'whatsapp', optedOut: true } } },
+      },
     }),
   ]);
 
@@ -325,9 +446,7 @@ export async function refreshFollowupCampaignMetrics(db: PrismaClient, campaignI
 
 function eligibleContactWhere() {
   const stagingAllowlist = process.env.WHATSAPP_STAGING_ALLOWLIST?.trim();
-  const allowedPhones = stagingAllowlist
-    ? [...parseStagingAllowlist(stagingAllowlist)]
-    : null;
+  const allowedPhones = stagingAllowlist ? [...parseStagingAllowlist(stagingAllowlist)] : null;
 
   return {
     normalizedPhone: allowedPhones ? { in: allowedPhones } : { not: null },
@@ -342,7 +461,7 @@ async function sendTemplateMessage(input: {
   to: string;
   templateName: string;
   language: string;
-  offerUrl: string | null;
+  parameters: string[];
 }): Promise<string> {
   const provider = (process.env.WHATSAPP_PRIVATE_PROVIDER ?? 'mock').toLowerCase();
   if (provider === 'mock') return `mock-${crypto.randomUUID()}`;
@@ -357,27 +476,34 @@ async function sendTemplateMessage(input: {
   const safetyEnvironment = stagingAllowlist?.trim()
     ? 'staging'
     : (process.env.DEPLOYMENT_ENV ?? 'development');
-  const recipient = assertStagingRecipientAllowed(
-    input.to,
-    safetyEnvironment,
-    stagingAllowlist,
-  );
+  const recipient = assertStagingRecipientAllowed(input.to, safetyEnvironment, stagingAllowlist);
 
-  const components = input.offerUrl
-    ? [{ type: 'body', parameters: [{ type: 'text', text: input.offerUrl }] }]
-    : undefined;
-  const response = await fetch(`https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: recipient,
-      type: 'template',
-      template: { name: input.templateName, language: { code: input.language }, ...(components ? { components } : {}) },
-    }),
-  });
-  const body = (await response.json().catch(() => null)) as { messages?: Array<{ id?: string }>; error?: { code?: number; message?: string } } | null;
+  const components =
+    input.parameters.length > 0
+      ? [{ type: 'body', parameters: input.parameters.map((text) => ({ type: 'text', text })) }]
+      : undefined;
+  const response = await fetch(
+    `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: recipient,
+        type: 'template',
+        template: {
+          name: input.templateName,
+          language: { code: input.language },
+          ...(components ? { components } : {}),
+        },
+      }),
+    },
+  );
+  const body = (await response.json().catch(() => null)) as {
+    messages?: Array<{ id?: string }>;
+    error?: { code?: number; message?: string };
+  } | null;
   if (!response.ok) {
     throw new MetaSendError(response.status, body?.error?.code, body?.error?.message);
   }
@@ -387,7 +513,11 @@ async function sendTemplateMessage(input: {
 }
 
 class MetaSendError extends Error {
-  constructor(readonly httpStatus: number, readonly metaCode?: number, message?: string) {
+  constructor(
+    readonly httpStatus: number,
+    readonly metaCode?: number,
+    message?: string,
+  ) {
     super(message ?? 'Meta Cloud API request failed');
   }
 }
@@ -401,7 +531,8 @@ function classifySendError(error: unknown, attempts: number) {
     };
   }
 
-  const transient = error instanceof MetaSendError && (error.httpStatus === 429 || error.httpStatus >= 500);
+  const transient =
+    error instanceof MetaSendError && (error.httpStatus === 429 || error.httpStatus >= 500);
   if (transient && attempts < 3) {
     return {
       status: 'queued',
@@ -412,7 +543,8 @@ function classifySendError(error: unknown, attempts: number) {
   }
   return {
     status: 'failed',
-    errorCode: error instanceof MetaSendError ? `meta_${error.metaCode ?? error.httpStatus}` : 'send_failed',
+    errorCode:
+      error instanceof MetaSendError ? `meta_${error.metaCode ?? error.httpStatus}` : 'send_failed',
     errorMessage: 'Não foi possível enviar a mensagem',
     failedAt: new Date(),
   };
@@ -420,4 +552,14 @@ function classifySendError(error: unknown, attempts: number) {
 
 export function hasPendingMessages(status: string): boolean {
   return !TERMINAL_MESSAGE_STATUSES.includes(status);
+}
+
+function extractParameterCount(content: string): number {
+  const indexes = [...content.matchAll(/\{\{(\d+)\}\}/g)].map((match) => Number(match[1]));
+  return indexes.length === 0 ? 0 : Math.max(...indexes);
+}
+
+function readTemplateParameters(value: unknown, offerUrl?: string | null): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item));
+  return offerUrl ? [offerUrl] : [];
 }

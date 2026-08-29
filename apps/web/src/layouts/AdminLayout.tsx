@@ -1,8 +1,16 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, Megaphone, Users, Upload, Settings,
-  Menu, X, LogOut, ChevronRight, FileText,
+  LayoutDashboard,
+  Megaphone,
+  Users,
+  Upload,
+  Settings,
+  Menu,
+  X,
+  LogOut,
+  ChevronRight,
+  FileText,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.js';
 import { useCanAccess } from '../hooks/usePermission.js';
@@ -78,9 +86,7 @@ export function AdminLayout(): React.ReactElement {
 
         <div className="sidebar-footer">
           <div className="sidebar-user">
-            <div className="sidebar-user-avatar">
-              {user?.name?.charAt(0).toUpperCase() ?? 'U'}
-            </div>
+            <div className="sidebar-user-avatar">{user?.name?.charAt(0).toUpperCase() ?? 'U'}</div>
             <div className="sidebar-user-info">
               <span className="sidebar-user-name">{user?.name}</span>
               <span className="sidebar-user-role">{user?.role}</span>
@@ -104,7 +110,7 @@ export function AdminLayout(): React.ReactElement {
           </button>
           <Breadcrumbs />
           <div className="topbar-right">
-            <span className="topbar-version">v0.2.0</span>
+            <span className="topbar-version">v0.3.0</span>
           </div>
         </header>
 
@@ -131,9 +137,7 @@ function SidebarItem({
   return (
     <NavLink
       to={item.to}
-      className={({ isActive }) =>
-        `sidebar-nav-item ${isActive ? 'active' : ''}`
-      }
+      className={({ isActive }) => `sidebar-nav-item ${isActive ? 'active' : ''}`}
       onClick={onNavigate}
       end={item.to === '/'}
     >

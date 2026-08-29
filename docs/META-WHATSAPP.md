@@ -12,11 +12,14 @@ O `GET` valida o challenge com `META_WHATSAPP_VERIFY_TOKEN`. O `POST` valida `X-
 
 ## Templates
 
-- `meteorico_acompanhamento`: sem variáveis.
-- `meteorico_oferta`: `{{1}}` é a URL HTTPS da oferta.
-- `meteorico_ultimo_aviso`: `{{1}}` é a URL HTTPS da oferta.
+O CRM gerencia templates pelo endpoint oficial `/{WABA_ID}/message_templates`:
 
-Os textos não usam o nome importado. A categoria deve ser a classificação vigente indicada pelo WhatsApp Manager no momento da submissão; não force uma categoria incompatível.
+- criação com nome técnico, idioma, categoria, corpo, rodapé e exemplos;
+- sincronização de status, categoria final, qualidade e motivo de rejeição;
+- atualização por webhook quando a conta estiver inscrita em `message_template_status_update` e `template_category_update`;
+- liberação para campanhas somente quando o status for `APPROVED`.
+
+Os textos não usam automaticamente o nome importado. A categoria deve ser a classificação vigente retornada pela Meta; a sugestão local serve apenas como alerta e não substitui a revisão oficial.
 
 ## Coexistence
 

@@ -35,11 +35,17 @@ export function LoginPage() {
           <p className="login-subtitle">Gerencie seus lancamentos</p>
         </div>
 
-        {error && <Alert variant="danger" onDismiss={() => setError('')}>{error}</Alert>}
+        {error && (
+          <Alert variant="danger" onDismiss={() => setError('')}>
+            {error}
+          </Alert>
+        )}
 
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="label" htmlFor="email">Email</label>
+            <label className="label" htmlFor="email">
+              Email
+            </label>
             <input
               id="email"
               className="input"
@@ -54,7 +60,9 @@ export function LoginPage() {
           </div>
 
           <div className="form-group">
-            <label className="label" htmlFor="password">Senha</label>
+            <label className="label" htmlFor="password">
+              Senha
+            </label>
             <input
               id="password"
               className="input"
@@ -67,18 +75,12 @@ export function LoginPage() {
             />
           </div>
 
-          <button
-            className="btn btn-primary btn-lg w-full"
-            type="submit"
-            disabled={loading}
-          >
+          <button className="btn btn-primary btn-lg w-full" type="submit" disabled={loading}>
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
 
-        <div className="login-footer">
-          Meteorico CRM v0.2.0
-        </div>
+        <div className="login-footer">Meteorico CRM v0.3.0</div>
       </div>
     </div>
   );

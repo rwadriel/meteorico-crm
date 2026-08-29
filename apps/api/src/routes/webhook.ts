@@ -8,6 +8,7 @@ import { getMockProvider } from '../providers/messaging-mock.js';
 import { createMetaCloudProvider } from '../providers/messaging-provider.js';
 import type { MessagingProvider, WebhookPayload } from '../providers/messaging.js';
 import { handleFollowupDeliveryStatus, handleFollowupInbound } from '../services/followup.js';
+import { applyMetaTemplateWebhook } from '../services/meta-template.js';
 
 interface RawBodyRequest extends FastifyRequest {
   rawBody?: Buffer;
@@ -107,14 +108,16 @@ export async function webhookRoutes(app: FastifyInstance) {
         return reply.status(403).send({ error: 'Invalid webhook signature' });
       }
 
+      const templateUpdates = await applyMetaTemplateWebhook(getClient(), request.body);
       const parsed = provider.parseWebhook(headers, request.body);
       const payloads = normalizePayloads(parsed);
       if (!payloads) {
+        if (templateUpdates > 0) return reply.send({ ok: true, templateUpdates });
         return reply.status(400).send({ error: 'Invalid webhook payload' });
       }
 
       const result = await processWebhookPayloads(provider, payloads);
-      return reply.send({ ok: true, ...result });
+      return reply.send({ ok: true, templateUpdates, ...result });
     },
   );
 }
@@ -285,7 +288,10 @@ async function notifyN8n(url: string | undefined, body: Record<string, unknown>)
   try {
     await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Internal-Token': process.env.N8N_INTERNAL_TOKEN },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Token': process.env.N8N_INTERNAL_TOKEN,
+      },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(5000),
     });

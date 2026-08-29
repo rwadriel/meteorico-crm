@@ -1,26 +1,30 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { getClient } from '@meteorico/database';
+import { getClient, Prisma } from '@meteorico/database';
 import { z } from 'zod';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
 import { writeAuditLog } from '../services/audit.js';
 import {
-  FOLLOWUP_TEMPLATES,
+  getAvailableFollowupTemplates,
   getAudienceStats,
   prepareFollowupCampaign,
   processFollowupBatch,
   refreshFollowupCampaignMetrics,
-  validateFollowupCampaignInput,
+  validateFollowupCampaignWithDb,
 } from '../services/followup.js';
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(160),
   templateName: z.string().trim().min(1).max(100),
   offerUrl: z.string().trim().max(2048).optional().nullable(),
+  templateParameters: z.array(z.string().trim().min(1).max(2048)).max(10).optional(),
 });
 
 const batchSchema = z.object({ batchSize: z.coerce.number().int().min(1).max(25).default(10) });
-const listSchema = z.object({ page: z.coerce.number().int().positive().default(1), limit: z.coerce.number().int().min(1).max(100).default(20) });
+const listSchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
 
 export async function followupRoutes(app: FastifyInstance) {
   const db = getClient();
@@ -29,41 +33,29 @@ export async function followupRoutes(app: FastifyInstance) {
   const update = [requireAuth, requirePermission('campaigns', 'update')];
 
   app.get('/followup/templates', { preHandler: read }, async () => {
-    const approvedNames = new Set(
-      (process.env.META_APPROVED_TEMPLATE_NAMES ?? '')
-        .split(',')
-        .map((name) => name.trim())
-        .filter(Boolean),
-    );
-    return {
-      templates: FOLLOWUP_TEMPLATES.map((template) => ({
-        ...template,
-        status: approvedNames.has(template.name) ? 'approved' : 'pending',
-      })),
-    };
+    return { templates: await getAvailableFollowupTemplates(db) };
   });
 
   app.get('/followup/audience', { preHandler: read }, async () => getAudienceStats(db));
 
   app.get('/followup/system-status', { preHandler: read }, async () => {
-    const approvedTemplates = (process.env.META_APPROVED_TEMPLATE_NAMES ?? '')
-      .split(',')
-      .map((name) => name.trim())
-      .filter(Boolean);
+    const approvedTemplates = await getAvailableFollowupTemplates(db);
     return {
       provider: process.env.WHATSAPP_PRIVATE_PROVIDER ?? 'mock',
       outboundEnabled: process.env.WHATSAPP_OUTBOUND_ENABLED === 'true',
       graphVersion: process.env.META_GRAPH_API_VERSION ?? 'v25.0',
       metaConfigured: Boolean(
-        process.env.META_WHATSAPP_ACCESS_TOKEN
-        && process.env.META_WHATSAPP_PHONE_NUMBER_ID
-        && process.env.META_WHATSAPP_WABA_ID
-        && process.env.META_WHATSAPP_VERIFY_TOKEN
-        && process.env.META_APP_SECRET,
+        process.env.META_WHATSAPP_ACCESS_TOKEN &&
+        process.env.META_WHATSAPP_PHONE_NUMBER_ID &&
+        process.env.META_WHATSAPP_WABA_ID &&
+        process.env.META_WHATSAPP_VERIFY_TOKEN &&
+        process.env.META_APP_SECRET,
       ),
-      n8nConfigured: Boolean(process.env.N8N_CAMPAIGN_WEBHOOK_URL && process.env.N8N_INTERNAL_TOKEN),
-      approvedTemplates: FOLLOWUP_TEMPLATES.filter((template) => approvedTemplates.includes(template.name)).length,
-      requiredTemplates: FOLLOWUP_TEMPLATES.length,
+      n8nConfigured: Boolean(
+        process.env.N8N_CAMPAIGN_WEBHOOK_URL && process.env.N8N_INTERNAL_TOKEN,
+      ),
+      approvedTemplates: approvedTemplates.length,
+      requiredTemplates: approvedTemplates.length,
     };
   });
 
@@ -107,13 +99,14 @@ export async function followupRoutes(app: FastifyInstance) {
 
   app.post('/followup/campaigns', { preHandler: create }, async (request, reply) => {
     const input = createSchema.parse(request.body);
-    validateFollowupCampaignInput(input);
+    const { parameters, template } = await validateFollowupCampaignWithDb(db, input);
     const campaign = await db.followupCampaign.create({
       data: {
         name: input.name,
         templateName: input.templateName,
-        templateLanguage: 'pt_BR',
-        offerUrl: input.offerUrl || null,
+        templateLanguage: template.language,
+        offerUrl: template.requiresUrl ? (parameters[0] ?? null) : null,
+        templateParameters: parameters as unknown as Prisma.InputJsonValue,
         createdBy: request.user!.id,
       },
     });
@@ -133,13 +126,19 @@ export async function followupRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const campaign = await db.followupCampaign.findUnique({ where: { id } });
     if (!campaign) return reply.status(404).send({ message: 'Campanha não encontrada' });
-    validateFollowupCampaignInput(campaign);
+    await validateFollowupCampaignWithDb(db, campaign);
     const audience = await getAudienceStats(db);
     await db.followupCampaign.update({
       where: { id },
       data: { totalContacts: audience.total, eligibleContacts: audience.eligible, status: 'ready' },
     });
-    return { mode: 'dry_run', sent: 0, audience, template: campaign.templateName, offerUrl: campaign.offerUrl };
+    return {
+      mode: 'dry_run',
+      sent: 0,
+      audience,
+      template: campaign.templateName,
+      offerUrl: campaign.offerUrl,
+    };
   });
 
   app.post('/followup/campaigns/:id/start', { preHandler: update }, async (request, reply) => {
@@ -148,6 +147,13 @@ export async function followupRoutes(app: FastifyInstance) {
     if (!current) return reply.status(404).send({ message: 'Campanha não encontrada' });
     if (!['draft', 'ready'].includes(current.status)) {
       return reply.status(409).send({ message: 'A campanha não pode ser iniciada neste estado' });
+    }
+    try {
+      await validateFollowupCampaignWithDb(db, current);
+    } catch (error) {
+      return reply
+        .status(409)
+        .send({ message: error instanceof Error ? error.message : 'Template inválido' });
     }
     if (process.env.WHATSAPP_OUTBOUND_ENABLED !== 'true') {
       return reply.status(409).send({ message: 'Envio real está desativado. Use o Modo Teste.' });
@@ -190,7 +196,8 @@ export async function followupRoutes(app: FastifyInstance) {
       where: { id, status: 'running' },
       data: { status: 'paused' },
     });
-    if (updated.count !== 1) return reply.status(409).send({ message: 'A campanha não está em execução' });
+    if (updated.count !== 1)
+      return reply.status(409).send({ message: 'A campanha não está em execução' });
     return db.followupCampaign.findUnique({ where: { id } });
   });
 
@@ -203,7 +210,8 @@ export async function followupRoutes(app: FastifyInstance) {
       where: { id, status: 'paused' },
       data: { status: 'running' },
     });
-    if (updated.count !== 1) return reply.status(409).send({ message: 'A campanha não está pausada' });
+    if (updated.count !== 1)
+      return reply.status(409).send({ message: 'A campanha não está pausada' });
     try {
       await triggerN8n(id);
     } catch {
@@ -222,15 +230,17 @@ export async function followupRoutes(app: FastifyInstance) {
     });
     const rows = ['telefone,status,enviado_em,entregue_em,lido_em,respondeu,erro'];
     for (const message of messages) {
-      rows.push([
-        csvCell(message.contact.normalizedPhone ?? ''),
-        csvCell(message.status),
-        csvCell(message.submittedAt?.toISOString() ?? ''),
-        csvCell(message.deliveredAt?.toISOString() ?? ''),
-        csvCell(message.readAt?.toISOString() ?? ''),
-        message.repliedAt ? 'sim' : 'nao',
-        csvCell(message.errorCode ?? ''),
-      ].join(','));
+      rows.push(
+        [
+          csvCell(message.contact.normalizedPhone ?? ''),
+          csvCell(message.status),
+          csvCell(message.submittedAt?.toISOString() ?? ''),
+          csvCell(message.deliveredAt?.toISOString() ?? ''),
+          csvCell(message.readAt?.toISOString() ?? ''),
+          message.repliedAt ? 'sim' : 'nao',
+          csvCell(message.errorCode ?? ''),
+        ].join(','),
+      );
     }
     return reply
       .type('text/csv; charset=utf-8')
@@ -259,7 +269,12 @@ export async function followupRoutes(app: FastifyInstance) {
   app.post('/internal/followup/retry-due', async (request, reply) => {
     if (!verifyInternalToken(request)) return reply.status(403).send({ message: 'Forbidden' });
     const campaigns = await db.followupCampaign.findMany({
-      where: { status: 'running', messages: { some: { status: 'queued', attempts: { gt: 0 }, nextAttemptAt: { lte: new Date() } } } },
+      where: {
+        status: 'running',
+        messages: {
+          some: { status: 'queued', attempts: { gt: 0 }, nextAttemptAt: { lte: new Date() } },
+        },
+      },
       select: { id: true },
       take: 20,
     });
