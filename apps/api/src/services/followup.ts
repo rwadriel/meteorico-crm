@@ -1,5 +1,9 @@
 import type { PrismaClient } from '@meteorico/database';
-import { OutboundBlockedError, assertStagingRecipientAllowed } from '@meteorico/shared';
+import {
+  OutboundBlockedError,
+  assertStagingRecipientAllowed,
+  parseStagingAllowlist,
+} from '@meteorico/shared';
 
 export const FOLLOWUP_TEMPLATES = [
   {
@@ -320,8 +324,13 @@ export async function refreshFollowupCampaignMetrics(db: PrismaClient, campaignI
 }
 
 function eligibleContactWhere() {
+  const stagingAllowlist = process.env.WHATSAPP_STAGING_ALLOWLIST?.trim();
+  const allowedPhones = stagingAllowlist
+    ? [...parseStagingAllowlist(stagingAllowlist)]
+    : null;
+
   return {
-    normalizedPhone: { not: null },
+    normalizedPhone: allowedPhones ? { in: allowedPhones } : { not: null },
     isStudent: false,
     totalPurchases: 0,
     purchaseStatus: { not: 'purchased' },
