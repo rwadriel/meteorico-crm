@@ -1,0 +1,349 @@
+import type { PrismaClient } from '@meteorico/database';
+import { Prisma } from '@meteorico/database';
+import { groupManagerSnapshotStaleAfterSeconds } from '@meteorico/shared';
+import type { WhatsAppManagerProvider, WmSnapshotGroup } from '../adapters/whatsapp-manager.js';
+import { createWorkerLogger } from '../logger.js';
+import { normalizeAllowedManagerPhone } from '../participant-safety.js';
+import { assertProviderSourceId } from '../source-aware-cursor.js';
+import { lockGroupMemberships } from './membership-lock.js';
+
+const logger = createWorkerLogger();
+
+export interface ReconciliationResult {
+  sourceId: string | null;
+  providerLastSeq: number | null;
+  groupsReconciled: number;
+  membershipsAdded: number;
+  membershipsRemoved: number;
+  contactsCreated: number;
+  skippedUnknown: number;
+  skippedStale: number;
+  skippedDisconnected: number;
+  skippedIncomplete: number;
+  groupsSeen: number;
+  oldestSnapshotAt: string | null;
+  providerConnected: boolean | null;
+}
+
+export async function reconcileSnapshots(
+  db: PrismaClient,
+  provider: WhatsAppManagerProvider,
+  groupId?: string,
+  now = new Date(),
+): Promise<ReconciliationResult> {
+  const result: ReconciliationResult = {
+    sourceId: null,
+    providerLastSeq: null,
+    groupsReconciled: 0,
+    membershipsAdded: 0,
+    membershipsRemoved: 0,
+    contactsCreated: 0,
+    skippedUnknown: 0,
+    skippedStale: 0,
+    skippedDisconnected: 0,
+    skippedIncomplete: 0,
+    groupsSeen: 0,
+    oldestSnapshotAt: null,
+    providerConnected: null,
+  };
+
+  const health = await provider.health();
+  const sourceId = assertProviderSourceId(health.sourceId);
+  result.sourceId = sourceId;
+  result.providerLastSeq = health.lastSeq;
+  result.providerConnected = health.connected ?? null;
+  if (!health.ok || health.connected === false) {
+    result.skippedDisconnected = 1;
+    logger.warn({
+      event: 'reconciliation_skipped',
+      reason: health.connected === false ? 'provider_disconnected' : 'provider_unhealthy',
+    }, 'Snapshot reconciliation skipped');
+    return result;
+  }
+
+  const snapshotResponse = await provider.snapshots(groupId);
+  assertSameProviderSource(sourceId, snapshotResponse.sourceId);
+  const { groups: snapshots } = snapshotResponse;
+  result.groupsSeen = snapshots.length;
+  const staleAfterSeconds = groupManagerSnapshotStaleAfterSeconds(
+    process.env.GROUP_MANAGER_SNAPSHOT_STALE_AFTER_SECONDS,
+  );
+  let oldestObservedAt: Date | null = null;
+
+  for (const snapshotSummary of snapshots) {
+    const group = await db.group.findFirst({
+      where: { whatsappId: snapshotSummary.groupId },
+    });
+
+    if (!group) {
+      result.skippedUnknown++;
+      continue;
+    }
+
+    const summaryFreshness = observeSnapshotFreshness(
+      snapshotSummary.updatedAt,
+      now,
+      staleAfterSeconds,
+      oldestObservedAt,
+    );
+    oldestObservedAt = summaryFreshness.oldestObservedAt;
+    if (!summaryFreshness.fresh) {
+      result.skippedStale++;
+      logger.warn({
+        event: 'snapshot_stale',
+        groupId: snapshotSummary.groupId,
+        snapshotAt: summaryFreshness.snapshotAt?.toISOString() ?? null,
+        timestampFromFuture: summaryFreshness.timestampFromFuture,
+        staleAfterSeconds,
+      }, 'Stale snapshot ignored');
+      continue;
+    }
+
+    let snapshot = snapshotSummary;
+    if (!snapshot.members) {
+      const detail = await provider.snapshots(snapshot.groupId);
+      assertSameProviderSource(sourceId, detail.sourceId);
+      snapshot = detail.groups.find((candidate) => candidate.groupId === snapshot.groupId)
+        ?? snapshot;
+
+      const detailFreshness = observeSnapshotFreshness(
+        snapshot.updatedAt,
+        now,
+        staleAfterSeconds,
+        oldestObservedAt,
+      );
+      oldestObservedAt = detailFreshness.oldestObservedAt;
+      if (!detailFreshness.fresh) {
+        result.skippedStale++;
+        logger.warn({
+          event: 'snapshot_stale',
+          groupId: snapshot.groupId,
+          snapshotAt: detailFreshness.snapshotAt?.toISOString() ?? null,
+          timestampFromFuture: detailFreshness.timestampFromFuture,
+          staleAfterSeconds,
+        }, 'Stale detailed snapshot ignored');
+        continue;
+      }
+    }
+
+    if (!snapshot.members) {
+      result.skippedIncomplete++;
+      logger.warn({
+        event: 'reconciliation_skipped',
+        groupId: snapshot.groupId,
+        reason: 'members_missing',
+      }, 'Incomplete snapshot ignored');
+      continue;
+    }
+
+    await db.$transaction(async (tx) => {
+      await lockGroupMemberships(tx, group.id);
+      await reconcileGroup(tx as unknown as PrismaClient, group, snapshot, result);
+    });
+    result.groupsReconciled++;
+  }
+
+  if (result.skippedIncomplete === 0) {
+    result.oldestSnapshotAt = oldestObservedAt?.toISOString() ?? null;
+  }
+
+  logger.info({ event: 'snapshot_success', ...result }, 'Snapshot reconciliation complete');
+  return result;
+}
+
+function assertSameProviderSource(expected: string, observed: unknown): void {
+  const actual = assertProviderSourceId(observed);
+  if (actual !== expected) {
+    throw new Error('WhatsApp Manager: source identity changed during snapshot');
+  }
+}
+
+async function reconcileGroup(
+  db: PrismaClient,
+  group: { id: string; campaignId: string; category: string },
+  snapshot: WmSnapshotGroup,
+  result: ReconciliationResult,
+) {
+  const snapshotAt = new Date(snapshot.updatedAt);
+  const snapshotPhones = new Set<string>();
+  for (const member of snapshot.members ?? []) {
+    const phone = normalizeAllowedManagerPhone(member.number);
+    if (phone) snapshotPhones.add(phone);
+  }
+
+  const memberships = await db.groupMembership.findMany({
+    where: { groupId: group.id },
+    include: { contact: true },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const activePhones = new Map<string, { id: string; joinedAt: Date }>();
+  const latestMemberships = new Map<string, { isActive: boolean; leftAt: Date | null }>();
+  for (const m of memberships) {
+    const phone = normalizeAllowedManagerPhone(m.contact.normalizedPhone ?? m.contact.phone);
+    if (!phone) continue;
+    if (!latestMemberships.has(phone)) {
+      latestMemberships.set(phone, { isActive: m.isActive, leftAt: m.leftAt });
+    }
+    if (m.isActive && !activePhones.has(phone)) {
+      activePhones.set(phone, { id: m.id, joinedAt: m.joinedAt });
+    }
+  }
+
+  for (const member of snapshot.members ?? []) {
+    const phone = normalizeAllowedManagerPhone(member.number);
+    if (!phone) continue;
+    if (activePhones.has(phone)) continue;
+    const latestMembership = latestMemberships.get(phone);
+    if (latestMembership?.leftAt && latestMembership.leftAt > snapshotAt) continue;
+
+    let contact = await db.contact.findFirst({
+      where: { OR: [{ phone }, { normalizedPhone: phone }] },
+    });
+    if (!contact) {
+      contact = await db.contact.create({
+        data: {
+          phone,
+          normalizedPhone: phone,
+          name: member.name || '',
+          firstSeenAt: new Date(),
+          lastSeenAt: new Date(),
+        },
+      });
+      result.contactsCreated++;
+    }
+
+    const membership = await db.groupMembership.create({
+      data: {
+        groupId: group.id,
+        contactId: contact.id,
+        joinedAt: new Date(),
+        isActive: true,
+      },
+    });
+
+    const existingParticipation = await db.campaignParticipation.findUnique({
+      where: {
+        contactId_campaignId: {
+          contactId: contact.id,
+          campaignId: group.campaignId,
+        },
+      },
+    });
+
+    if (!existingParticipation) {
+      const participation = await db.campaignParticipation.create({
+        data: {
+          contactId: contact.id,
+          campaignId: group.campaignId,
+          groupId: group.id,
+          status: 'active',
+          classification: classificationFromCategory(group.category),
+          metadata: {
+            joinConfirmedAt: new Date().toISOString(),
+            confirmationSource: 'whatsapp-manager-snapshot',
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      await db.contact.update({
+        where: { id: contact.id },
+        data: { totalParticipations: { increment: 1 } },
+      });
+
+      await db.auditLog.create({
+        data: {
+          action: 'participation.confirmed',
+          resource: 'campaign_participations',
+          resourceId: participation.id,
+          newValue: {
+            contactId: contact.id,
+            campaignId: group.campaignId,
+            groupId: group.id,
+            source: 'snapshot',
+          } as Prisma.InputJsonValue,
+        },
+      });
+    } else if (existingParticipation.status === 'left') {
+      await db.campaignParticipation.update({
+        where: { id: existingParticipation.id },
+        data: { status: 'active', groupId: group.id },
+      });
+    }
+
+    await db.auditLog.create({
+      data: {
+        action: 'group.join',
+        resource: 'group_memberships',
+        resourceId: membership.id,
+        newValue: {
+          contactId: contact.id,
+          campaignId: group.campaignId,
+          groupId: group.id,
+          source: 'snapshot',
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    result.membershipsAdded++;
+  }
+
+  for (const [phone, membership] of activePhones) {
+    if (snapshotPhones.has(phone)) continue;
+    if (membership.joinedAt > snapshotAt) continue;
+
+    await db.groupMembership.update({
+      where: { id: membership.id },
+      data: { isActive: false, leftAt: new Date() },
+    });
+
+    result.membershipsRemoved++;
+  }
+
+  const activeCount = await db.groupMembership.count({
+    where: { groupId: group.id, isActive: true },
+  });
+  await db.group.update({
+    where: { id: group.id },
+    data: { currentCount: activeCount },
+  });
+}
+
+function parseSnapshotDate(value: string): Date | null {
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
+function observeSnapshotFreshness(
+  value: string,
+  now: Date,
+  staleAfterSeconds: number,
+  oldestObservedAt: Date | null,
+): {
+  fresh: boolean;
+  snapshotAt: Date | null;
+  timestampFromFuture: boolean;
+  oldestObservedAt: Date | null;
+} {
+  const snapshotAt = parseSnapshotDate(value);
+  const timestampFromFuture = snapshotAt !== null
+    && snapshotAt.getTime() > now.getTime() + 5 * 60 * 1000;
+  const nextOldest = snapshotAt !== null
+    && !timestampFromFuture
+    && (oldestObservedAt === null || snapshotAt < oldestObservedAt)
+    ? snapshotAt
+    : oldestObservedAt;
+
+  return {
+    fresh: snapshotAt !== null
+      && !timestampFromFuture
+      && now.getTime() - snapshotAt.getTime() <= staleAfterSeconds * 1000,
+    snapshotAt,
+    timestampFromFuture,
+    oldestObservedAt: nextOldest,
+  };
+}
+
+function classificationFromCategory(category: string): string {
+  return ['novo', 'reparticipante', 'veterano'].includes(category) ? category : 'new';
+}

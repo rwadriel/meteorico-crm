@@ -1,0 +1,29 @@
+### Requests prontos — use no VS Code (extensão "REST Client") ou como referência de curl.
+### Troque o token abaixo pelo seu.
+
+@base = https://zapgrupos-whatsapp-manager.gq2dju.easypanel.host
+@token = COLE_SEU_TOKEN_AQUI
+
+### Health — cursor atual
+GET {{base}}/api/integration/health
+Authorization: Bearer {{token}}
+
+### Últimas entradas
+GET {{base}}/api/integration/events?since=0&only=entrou,adicionado&limit=5
+Authorization: Bearer {{token}}
+
+### Só entradas de contatos NÃO salvos (para boas-vindas)
+GET {{base}}/api/integration/events?since=0&only=entrou,adicionado&onlyUnsaved=true&limit=5
+Authorization: Bearer {{token}}
+
+### Saídas e remoções (para recuperação)
+GET {{base}}/api/integration/events?since=0&only=saiu,removido&limit=5
+Authorization: Bearer {{token}}
+
+### Índice de grupos
+GET {{base}}/api/integration/snapshots
+Authorization: Bearer {{token}}
+
+### Membros de um grupo específico (troque o groupId)
+GET {{base}}/api/integration/snapshots?groupId=120363411868967783@g.us
+Authorization: Bearer {{token}}

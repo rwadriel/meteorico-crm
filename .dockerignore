@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+coverage
+.git
+.env
+.env.local
+*.log
+.DS_Store
+kit/
+docs/
+.turbo

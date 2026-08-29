@@ -1,0 +1,35 @@
+{
+  "name": "meteorico-crm",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.20.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel -r run dev",
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r run lint",
+    "lint:fix": "pnpm -r run lint:fix",
+    "format": "prettier --check .",
+    "format:fix": "prettier --write .",
+    "typecheck": "pnpm -r run typecheck",
+    "test": "pnpm -r --workspace-concurrency=1 run test",
+    "test:ci": "pnpm -r --workspace-concurrency=1 run test:ci",
+    "clean": "pnpm -r run clean",
+    "db:generate": "pnpm --filter @meteorico/database run generate",
+    "db:migrate": "pnpm --filter @meteorico/database run migrate",
+    "db:push": "pnpm --filter @meteorico/database run push",
+    "db:seed": "pnpm --filter @meteorico/database run seed",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:config": "docker compose config"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.5",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.66.0",
+    "vitest": "^3.2.7"
+  }
+}

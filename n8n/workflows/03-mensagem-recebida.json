@@ -1,0 +1,36 @@
+{
+  "name": "Meteórico - WA - Mensagem Recebida",
+  "id": "meteoricoWaInbound",
+  "nodes": [
+    {
+      "parameters": { "httpMethod": "POST", "path": "meteorico-inbound", "responseMode": "onReceived", "options": {} },
+      "id": "inbound-webhook",
+      "name": "Resposta validada pela API",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "meteorico-inbound"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{'http://api:4080/internal/followup/campaigns/' + $json.body.campaign_id + '/refresh'}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "credentials": { "httpHeaderAuth": { "id": "meteoricoInternalApi", "name": "Meteorico Internal API" } },
+      "id": "refresh-inbound",
+      "name": "Consolidar resposta e opt-out",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [280, 0]
+    }
+  ],
+  "connections": { "Resposta validada pela API": { "main": [[{ "node": "Consolidar resposta e opt-out", "type": "main", "index": 0 }]] } },
+  "active": true,
+  "settings": { "executionOrder": "v1", "saveDataErrorExecution": "all", "saveDataSuccessExecution": "none" },
+  "versionId": "00000000-0000-4000-8000-000000000003",
+  "meta": { "templateCredsSetupCompleted": false },
+  "tags": []
+}
