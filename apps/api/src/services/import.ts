@@ -439,6 +439,10 @@ export async function createImportPreview(
   audienceName?: string,
   consentSource?: string,
   consentAt?: Date,
+  editionName?: string,
+  landingPageUrl?: string,
+  consentText?: string,
+  consentVersion?: string,
 ) {
   let parsedRows: (ParsedContactRow | ParsedParticipationRow)[];
   let parseErrors: ParseError[];
@@ -560,7 +564,11 @@ export async function createImportPreview(
         type === 'contacts'
           ? audienceName?.trim() || filename.replace(/\.[^.]+$/, '') || 'Lista de contatos'
           : null,
+      editionName: type === 'contacts' ? editionName?.trim() || null : null,
+      landingPageUrl: type === 'contacts' ? landingPageUrl?.trim() || null : null,
       consentSource: type === 'contacts' ? consentSource?.trim() || null : null,
+      consentText: type === 'contacts' ? consentText?.trim() || null : null,
+      consentVersion: type === 'contacts' ? consentVersion?.trim() || null : null,
       consentAt: type === 'contacts' && consentSource ? (consentAt ?? new Date()) : null,
       totalRows: parsedRows.length + parseErrors.length,
       processedRows: 0,

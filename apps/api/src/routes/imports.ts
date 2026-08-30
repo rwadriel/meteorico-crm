@@ -60,7 +60,11 @@ export async function importRoutes(app: FastifyInstance) {
       let filename: string;
       let importType: string;
       let audienceName: string | undefined;
+      let editionName: string | undefined;
+      let landingPageUrl: string | undefined;
       let consentSource: string | undefined;
+      let consentText: string | undefined;
+      let consentVersion: string | undefined;
       let consentAt: string | undefined;
 
       if (contentType.includes('multipart/form-data')) {
@@ -81,8 +85,16 @@ export async function importRoutes(app: FastifyInstance) {
             type = (part as { value: string }).value;
           } else if (part.fieldname === 'audienceName') {
             audienceName = (part as { value: string }).value.trim();
+          } else if (part.fieldname === 'editionName') {
+            editionName = (part as { value: string }).value.trim();
+          } else if (part.fieldname === 'landingPageUrl') {
+            landingPageUrl = (part as { value: string }).value.trim();
           } else if (part.fieldname === 'consentSource') {
             consentSource = (part as { value: string }).value.trim();
+          } else if (part.fieldname === 'consentText') {
+            consentText = (part as { value: string }).value.trim();
+          } else if (part.fieldname === 'consentVersion') {
+            consentVersion = (part as { value: string }).value.trim();
           } else if (part.fieldname === 'consentAt') {
             consentAt = (part as { value: string }).value.trim();
           }
@@ -94,14 +106,35 @@ export async function importRoutes(app: FastifyInstance) {
 
         csvContent = fileContent;
         filename = fileName;
-        importType = type;
+        const parsed = importPreviewSchema.parse({
+          type,
+          audienceName,
+          editionName,
+          landingPageUrl,
+          consentSource,
+          consentText,
+          consentVersion,
+          consentAt,
+        });
+        importType = parsed.type;
+        audienceName = parsed.audienceName;
+        editionName = parsed.editionName;
+        landingPageUrl = parsed.landingPageUrl;
+        consentSource = parsed.consentSource;
+        consentText = parsed.consentText;
+        consentVersion = parsed.consentVersion;
+        consentAt = parsed.consentAt;
       } else {
         const body = request.body as {
           content: string;
           filename?: string;
           type: string;
           audienceName?: string;
+          editionName?: string;
+          landingPageUrl?: string;
           consentSource?: string;
+          consentText?: string;
+          consentVersion?: string;
           consentAt?: string;
         };
         const parsed = importPreviewSchema.parse(body);
@@ -109,7 +142,11 @@ export async function importRoutes(app: FastifyInstance) {
         filename = body.filename ?? 'upload.csv';
         importType = parsed.type;
         audienceName = parsed.audienceName;
+        editionName = parsed.editionName;
+        landingPageUrl = parsed.landingPageUrl;
         consentSource = parsed.consentSource;
+        consentText = parsed.consentText;
+        consentVersion = parsed.consentVersion;
         consentAt = parsed.consentAt;
       }
 
@@ -127,6 +164,10 @@ export async function importRoutes(app: FastifyInstance) {
           audienceName,
           consentSource,
           consentAt ? new Date(consentAt) : undefined,
+          editionName,
+          landingPageUrl,
+          consentText,
+          consentVersion,
         );
         await writeAuditLog(db, {
           userId: request.user!.id,
@@ -137,7 +178,10 @@ export async function importRoutes(app: FastifyInstance) {
             type: importType,
             filename,
             audienceName: result.import.audienceName,
+            editionName: result.import.editionName,
+            landingPageUrl: result.import.landingPageUrl,
             consentSource: result.import.consentSource,
+            consentVersion: result.import.consentVersion,
             totalRows: result.import.totalRows,
           },
           ipAddress: request.ip,

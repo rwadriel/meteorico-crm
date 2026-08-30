@@ -7,6 +7,12 @@ interface Audience {
   id: string;
   name: string;
   createdAt: string;
+  editionName: string | null;
+  landingPageUrl: string | null;
+  consentSource: string | null;
+  consentText: string | null;
+  consentVersion: string | null;
+  consentAt: string | null;
   total: number;
   eligible: number;
   excluded: number;
@@ -89,6 +95,11 @@ export function AudiencesPage() {
 
   const columns = [
     { key: 'name', header: 'Público' },
+    {
+      key: 'editionName',
+      header: 'Edição',
+      render: (audience: Audience) => audience.editionName || '—',
+    },
     { key: 'total', header: 'Contatos' },
     { key: 'eligible', header: 'Elegíveis' },
     { key: 'excluded', header: 'Excluídos' },
@@ -170,6 +181,35 @@ export function AudiencesPage() {
         onClose={() => setSelected(null)}
         title={selected?.name ?? 'Contatos'}
       >
+        {selected && (
+          <div className="card" style={{ marginBottom: '1rem' }}>
+            <p>
+              <strong>Edição:</strong> {selected.editionName || 'Não registrada'}
+            </p>
+            <p>
+              <strong>Página:</strong>{' '}
+              {selected.landingPageUrl ? (
+                <a href={selected.landingPageUrl} target="_blank" rel="noreferrer">
+                  {selected.landingPageUrl}
+                </a>
+              ) : (
+                'Não registrada'
+              )}
+            </p>
+            <p>
+              <strong>Consentimento:</strong> {selected.consentSource || 'Não registrado'}
+              {selected.consentVersion ? ` · ${selected.consentVersion}` : ''}
+              {selected.consentAt
+                ? ` · ${new Date(selected.consentAt).toLocaleDateString('pt-BR')}`
+                : ''}
+            </p>
+            {selected.consentText && (
+              <p style={{ marginTop: '0.6rem', whiteSpace: 'pre-wrap' }}>
+                <strong>Texto exibido:</strong> {selected.consentText}
+              </p>
+            )}
+          </div>
+        )}
         <Table
           columns={contactColumns}
           data={contacts}

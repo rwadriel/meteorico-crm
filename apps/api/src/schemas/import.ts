@@ -13,7 +13,17 @@ export const IMPORT_STATUSES = [
 export const importPreviewSchema = z.object({
   type: z.enum(IMPORT_TYPES),
   audienceName: z.string().trim().min(1).max(120).optional(),
+  editionName: z.string().trim().min(1).max(160).optional(),
+  landingPageUrl: z
+    .string()
+    .trim()
+    .url()
+    .max(2048)
+    .refine((value) => new URL(value).protocol === 'https:', 'A página deve usar HTTPS')
+    .optional(),
   consentSource: z.string().trim().min(1).max(160).optional(),
+  consentText: z.string().trim().min(1).max(4000).optional(),
+  consentVersion: z.string().trim().min(1).max(80).optional(),
   consentAt: z.string().datetime().optional(),
 });
 

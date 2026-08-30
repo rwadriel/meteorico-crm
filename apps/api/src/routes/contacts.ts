@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { getClient } from '@meteorico/database';
+import { normalizePhone, normalizeWhatsAppPhone } from '@meteorico/shared';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
+import { writeAuditLog } from '../services/audit.js';
 import { z } from 'zod';
 
 const listContactsSchema = z.object({
@@ -20,10 +22,77 @@ const updateContactSchema = z.object({
   optOut: z.boolean().optional(),
 });
 
+const optOutByPhoneSchema = z.object({
+  phone: z.string().trim().min(7).max(40),
+});
+
 export async function contactRoutes(app: FastifyInstance) {
   const db = getClient();
 
   app.addHook('onRequest', requireAuth);
+
+  app.post(
+    '/contacts/opt-out-by-phone',
+    {
+      preHandler: requirePermission('contacts', 'update'),
+    },
+    async (request, reply) => {
+      const input = optOutByPhoneSchema.parse(request.body);
+      const normalized = normalizePhone(input.phone);
+      const whatsappNormalized = normalizeWhatsAppPhone(input.phone);
+      const candidates = [...new Set([normalized, whatsappNormalized].filter(Boolean))] as string[];
+
+      if (candidates.length === 0) {
+        return reply.status(400).send({ message: 'Informe um telefone válido com DDD' });
+      }
+
+      const contact = await db.contact.findFirst({
+        where: {
+          OR: [{ phone: { in: candidates } }, { normalizedPhone: { in: candidates } }],
+        },
+        include: { preferences: { where: { channel: 'whatsapp' }, take: 1 } },
+      });
+
+      if (!contact) {
+        return reply.status(404).send({ message: 'Telefone não encontrado no CRM' });
+      }
+
+      const wasAlreadyBlocked = contact.preferences[0]?.optedOut ?? false;
+      const blockedAt = contact.optOutAt ?? new Date();
+      await db.$transaction([
+        db.contact.update({ where: { id: contact.id }, data: { optOutAt: blockedAt } }),
+        db.contactPreference.upsert({
+          where: { contactId_channel: { contactId: contact.id, channel: 'whatsapp' } },
+          create: {
+            contactId: contact.id,
+            channel: 'whatsapp',
+            optedOut: true,
+            blockedAt,
+            reason: 'admin_phone_lookup',
+          },
+          update: { optedOut: true, blockedAt, reason: 'admin_phone_lookup' },
+        }),
+      ]);
+
+      await writeAuditLog(db, {
+        userId: request.user!.id,
+        action: 'contact.opt_out_by_phone',
+        resource: 'contacts',
+        resourceId: contact.id,
+        oldValue: { optedOut: wasAlreadyBlocked },
+        newValue: { optedOut: true, reason: 'admin_phone_lookup' },
+        ipAddress: request.ip,
+      });
+
+      return {
+        id: contact.id,
+        name: contact.name,
+        phone: maskPhone(contact.normalizedPhone ?? contact.phone),
+        optedOut: true,
+        wasAlreadyBlocked,
+      };
+    },
+  );
 
   app.get(
     '/contacts',
@@ -253,4 +322,9 @@ function maskEmail(email: string): string {
       ? '*'.repeat(local.length)
       : `${local[0]}${'*'.repeat(local.length - 2)}${local[local.length - 1]}`;
   return `${masked}@${domain}`;
+}
+
+function maskPhone(phone: string | null): string | null {
+  if (!phone) return null;
+  return phone.length < 8 ? '***' : `${phone.slice(0, 4)}***${phone.slice(-2)}`;
 }

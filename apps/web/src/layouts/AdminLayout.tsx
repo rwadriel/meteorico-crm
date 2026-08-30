@@ -112,7 +112,7 @@ export function AdminLayout(): React.ReactElement {
           </button>
           <Breadcrumbs />
           <div className="topbar-right">
-            <span className="topbar-version">v0.5.0</span>
+            <span className="topbar-version">v0.6.0</span>
           </div>
         </header>
 

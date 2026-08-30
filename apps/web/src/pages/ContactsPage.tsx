@@ -27,8 +27,11 @@ interface ContactHistory {
   id: string;
   name: string;
   phone: string | null;
+  optOutAt: string | null;
   preferences: Array<{
     optedOut: boolean;
+    blockedAt: string | null;
+    reason: string;
     optedInAt: string | null;
     optInSource: string;
   }>;
@@ -54,7 +57,10 @@ export function ContactsPage() {
   const [optOutFilter, setOptOutFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [history, setHistory] = useState<ContactHistory | null>(null);
+  const [quickOptOutPhone, setQuickOptOutPhone] = useState('');
+  const [blockingPhone, setBlockingPhone] = useState(false);
   const [stats, setStats] = useState<{
     total: number;
     buyers: number;
@@ -81,6 +87,11 @@ export function ContactsPage() {
     }
   }, [page, search, purchaseFilter, optOutFilter]);
 
+  const fetchStats = useCallback(async () => {
+    const response = await fetch(`${API}/api/contacts/stats`, { credentials: 'include' });
+    if (response.ok) setStats(await response.json());
+  }, []);
+
   async function updateContact(contact: Contact, body: Record<string, unknown>) {
     setError('');
     try {
@@ -92,8 +103,40 @@ export function ContactsPage() {
       });
       if (!response.ok) throw new Error('Não foi possível atualizar o contato');
       await fetchContacts();
+      await fetchStats();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Falha ao atualizar contato');
+    }
+  }
+
+  async function blockByPhone() {
+    setBlockingPhone(true);
+    setError('');
+    setSuccess('');
+    try {
+      const response = await fetch(`${API}/api/contacts/opt-out-by-phone`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: quickOptOutPhone }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        message?: string;
+        phone?: string;
+        wasAlreadyBlocked?: boolean;
+      } | null;
+      if (!response.ok) throw new Error(body?.message ?? 'Não foi possível bloquear o telefone');
+      setSuccess(
+        body?.wasAlreadyBlocked
+          ? `O telefone ${body.phone ?? ''} já estava bloqueado.`
+          : `Telefone ${body?.phone ?? ''} bloqueado. Ele foi retirado de todos os próximos envios.`,
+      );
+      setQuickOptOutPhone('');
+      await Promise.all([fetchContacts(), fetchStats()]);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Falha ao bloquear o telefone');
+    } finally {
+      setBlockingPhone(false);
     }
   }
 
@@ -107,14 +150,7 @@ export function ContactsPage() {
     fetchContacts();
   }, [fetchContacts]);
 
-  useEffect(() => {
-    fetch(`${API}/api/contacts/stats`, { credentials: 'include' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) setStats(data);
-      })
-      .catch(() => {});
-  }, []);
+  useEffect(() => void fetchStats(), [fetchStats]);
 
   const columns = [
     { key: 'name', header: 'Nome', render: (c: Contact) => c.name || '(sem nome)' },
@@ -229,6 +265,33 @@ export function ContactsPage() {
           {error}
         </Alert>
       )}
+      {success && (
+        <Alert variant="success" onDismiss={() => setSuccess('')}>
+          {success}
+        </Alert>
+      )}
+
+      <div className="card" style={{ marginBottom: '1rem' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <Input
+            label="Bloquear envios pelo telefone"
+            placeholder="Ex.: 5591999999999"
+            value={quickOptOutPhone}
+            onChange={(event) => setQuickOptOutPhone(event.target.value)}
+          />
+          <Button
+            variant="danger"
+            loading={blockingPhone}
+            disabled={!quickOptOutPhone.trim()}
+            onClick={blockByPhone}
+          >
+            Bloquear WhatsApp
+          </Button>
+          <p className="text-sm text-secondary" style={{ marginBottom: '0.6rem' }}>
+            Não apaga o contato nem o histórico; impede qualquer novo disparo.
+          </p>
+        </div>
+      </div>
 
       <div className="card" style={{ marginBottom: '1rem' }}>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -336,6 +399,23 @@ export function ContactsPage() {
                   ? ` · ${new Date(history.preferences[0].optedInAt).toLocaleDateString('pt-BR')}`
                   : ''}
               </p>
+              <p>
+                <strong>Status de envio:</strong>{' '}
+                {history.preferences[0]?.optedOut ? 'Bloqueado (opt-out)' : 'Ativo'}
+                {history.optOutAt
+                  ? ` · desde ${new Date(history.optOutAt).toLocaleString('pt-BR')}`
+                  : ''}
+              </p>
+              {history.preferences[0]?.optedOut && (
+                <p>
+                  <strong>Motivo:</strong>{' '}
+                  {history.preferences[0].reason === 'keyword'
+                    ? 'Resposta do contato'
+                    : history.preferences[0].reason === 'admin_phone_lookup'
+                      ? 'Bloqueio manual por telefone'
+                      : history.preferences[0].reason || 'Não informado'}
+                </p>
+              )}
             </div>
             <div>
               <h3 style={{ marginBottom: '0.75rem' }}>Campanhas</h3>

@@ -32,7 +32,12 @@ interface ImportRecord {
   status: string;
   filename: string;
   audienceName: string | null;
+  editionName?: string | null;
+  landingPageUrl?: string | null;
   consentSource?: string | null;
+  consentText?: string | null;
+  consentVersion?: string | null;
+  consentAt?: string | null;
   totalRows: number;
   processedRows: number;
   errorRows: number;
@@ -58,7 +63,13 @@ export function ImportsPage() {
   const [importType, setImportType] = useState<'contacts' | 'participations'>('contacts');
   const [file, setFile] = useState<File | null>(null);
   const [audienceName, setAudienceName] = useState('');
-  const [consentSource, setConsentSource] = useState('Grupo do Meteórico');
+  const [editionName, setEditionName] = useState('');
+  const [landingPageUrl, setLandingPageUrl] = useState('');
+  const [consentSource, setConsentSource] = useState('Página de inscrição');
+  const [consentText, setConsentText] = useState(
+    'Quero participar do Meteórico Música Lucrativa com IA e aceito receber pelo WhatsApp, da equipe Música Lucrativa com IA, lembretes, conteúdos e ofertas relacionados a esta edição. Posso cancelar a qualquer momento respondendo SAIR.',
+  );
+  const [consentVersion, setConsentVersion] = useState('v1');
   const [consentAt, setConsentAt] = useState(() => new Date().toISOString().slice(0, 10));
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -92,7 +103,13 @@ export function ImportsPage() {
     setPreview(null);
     setImportType('contacts');
     setAudienceName('');
-    setConsentSource('Grupo do Meteórico');
+    setEditionName('');
+    setLandingPageUrl('');
+    setConsentSource('Página de inscrição');
+    setConsentText(
+      'Quero participar do Meteórico Música Lucrativa com IA e aceito receber pelo WhatsApp, da equipe Música Lucrativa com IA, lembretes, conteúdos e ofertas relacionados a esta edição. Posso cancelar a qualquer momento respondendo SAIR.',
+    );
+    setConsentVersion('v1');
     setConsentAt(new Date().toISOString().slice(0, 10));
   }
 
@@ -106,7 +123,11 @@ export function ImportsPage() {
       formData.append('type', importType);
       if (importType === 'contacts') {
         formData.append('audienceName', audienceName.trim());
+        formData.append('editionName', editionName.trim());
+        formData.append('landingPageUrl', landingPageUrl.trim());
         formData.append('consentSource', consentSource.trim());
+        formData.append('consentText', consentText.trim());
+        formData.append('consentVersion', consentVersion.trim());
         formData.append('consentAt', new Date(`${consentAt}T12:00:00.000Z`).toISOString());
       }
 
@@ -265,28 +286,63 @@ export function ImportsPage() {
           </div>
 
           {importType === 'contacts' && (
-            <div
-              className="grid gap-4"
-              style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}
-            >
-              <Input
-                label="Nome do grupo de contatos"
-                value={audienceName}
-                onChange={(event) => setAudienceName(event.target.value)}
-                placeholder="Ex.: Grupo 2 ou Alunos de agosto"
-              />
-              <Input
-                label="Origem do consentimento"
-                value={consentSource}
-                onChange={(event) => setConsentSource(event.target.value)}
-                placeholder="Ex.: Grupo do Meteórico"
-              />
-              <Input
-                label="Data do consentimento"
-                type="date"
-                value={consentAt}
-                onChange={(event) => setConsentAt(event.target.value)}
-              />
+            <div className="grid gap-4">
+              <Alert variant="warning">
+                Registre somente o texto que realmente estava visível na página quando esses
+                telefones foram captados. Este registro não cria consentimento retroativo.
+              </Alert>
+              <div
+                className="grid gap-4"
+                style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}
+              >
+                <Input
+                  label="Nome do público"
+                  value={audienceName}
+                  onChange={(event) => setAudienceName(event.target.value)}
+                  placeholder="Ex.: Meteórico agosto — grupo 2"
+                />
+                <Input
+                  label="Edição do Meteórico"
+                  value={editionName}
+                  onChange={(event) => setEditionName(event.target.value)}
+                  placeholder="Ex.: Meteórico Música IA — agosto/2026"
+                />
+                <Input
+                  label="URL da página de inscrição"
+                  type="url"
+                  value={landingPageUrl}
+                  onChange={(event) => setLandingPageUrl(event.target.value)}
+                  placeholder="https://..."
+                />
+                <Input
+                  label="Origem do consentimento"
+                  value={consentSource}
+                  onChange={(event) => setConsentSource(event.target.value)}
+                  placeholder="Ex.: Página de inscrição"
+                />
+                <Input
+                  label="Versão do texto"
+                  value={consentVersion}
+                  onChange={(event) => setConsentVersion(event.target.value)}
+                  placeholder="Ex.: v1"
+                />
+                <Input
+                  label="Data da captação/lista"
+                  type="date"
+                  value={consentAt}
+                  onChange={(event) => setConsentAt(event.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>Texto exato exibido na página</label>
+                <textarea
+                  className="input"
+                  rows={5}
+                  maxLength={4000}
+                  value={consentText}
+                  onChange={(event) => setConsentText(event.target.value)}
+                />
+              </div>
             </div>
           )}
 
@@ -334,7 +390,13 @@ export function ImportsPage() {
             disabled={
               !file ||
               (importType === 'contacts' &&
-                (!audienceName.trim() || !consentSource.trim() || !consentAt))
+                (!audienceName.trim() ||
+                  !editionName.trim() ||
+                  !landingPageUrl.trim() ||
+                  !consentSource.trim() ||
+                  !consentText.trim() ||
+                  !consentVersion.trim() ||
+                  !consentAt))
             }
             loading={uploading}
           >
@@ -348,9 +410,20 @@ export function ImportsPage() {
           <h3 style={{ marginBottom: '1rem' }}>Previa da Importacao</h3>
 
           {preview.import.audienceName && (
-            <p style={{ marginBottom: '1rem' }}>
-              Grupo: <strong>{preview.import.audienceName}</strong>
-            </p>
+            <div className="card" style={{ marginBottom: '1rem' }}>
+              <p>
+                Público: <strong>{preview.import.audienceName}</strong>
+              </p>
+              <p>
+                Edição: <strong>{preview.import.editionName || '—'}</strong>
+              </p>
+              <p>
+                Página: <strong>{preview.import.landingPageUrl || '—'}</strong>
+              </p>
+              <p>
+                Consentimento: <strong>{preview.import.consentVersion || '—'}</strong>
+              </p>
+            </div>
           )}
 
           <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>

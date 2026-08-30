@@ -32,7 +32,16 @@ export const FOLLOWUP_TEMPLATES = [
   },
 ] as const;
 
-const OPT_OUT_TERMS = new Set(['SAIR', 'PARAR', 'CANCELAR', 'REMOVER', 'NAO QUERO']);
+const OPT_OUT_TERMS = new Set([
+  'SAIR',
+  'PARAR',
+  'PARE',
+  'CANCELAR',
+  'REMOVER',
+  'STOP',
+  'NAO QUERO',
+  'NAO TENHO INTERESSE',
+]);
 const TERMINAL_MESSAGE_STATUSES = ['submitted', 'sent', 'delivered', 'read', 'failed', 'skipped'];
 
 export function getFollowupTemplate(name: string) {
@@ -156,6 +165,18 @@ export async function validateFollowupCampaignWithDb(
 export async function getAudienceLists(db: PrismaClient) {
   const lists = await db.contactList.findMany({
     where: { isActive: true },
+    include: {
+      sourceImport: {
+        select: {
+          editionName: true,
+          landingPageUrl: true,
+          consentSource: true,
+          consentText: true,
+          consentVersion: true,
+          consentAt: true,
+        },
+      },
+    },
     orderBy: { createdAt: 'desc' },
   });
 
@@ -164,6 +185,12 @@ export async function getAudienceLists(db: PrismaClient) {
       id: list.id,
       name: list.name,
       createdAt: list.createdAt,
+      editionName: list.sourceImport?.editionName ?? null,
+      landingPageUrl: list.sourceImport?.landingPageUrl ?? null,
+      consentSource: list.sourceImport?.consentSource ?? null,
+      consentText: list.sourceImport?.consentText ?? null,
+      consentVersion: list.sourceImport?.consentVersion ?? null,
+      consentAt: list.sourceImport?.consentAt ?? null,
       ...(await getAudienceStats(db, list.id)),
     })),
   );
@@ -479,8 +506,10 @@ export async function handleFollowupInbound(
     .toUpperCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ');
-  const isOptOut = OPT_OUT_TERMS.has(normalized);
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const isOptOut = isOptOutText(normalized);
 
   if (isOptOut) {
     await db.$transaction([
@@ -519,6 +548,24 @@ export async function handleFollowupInbound(
   }
   await refreshFollowupCampaignMetrics(db, latest.campaignId);
   return { isOptOut, campaignId: latest.campaignId };
+}
+
+export function isOptOutText(content: string): boolean {
+  const normalized = content
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (OPT_OUT_TERMS.has(normalized)) return true;
+  return (
+    /^(EU )?(QUERO|GOSTARIA DE) (SAIR|PARAR|CANCELAR)$/.test(normalized) ||
+    /^PARE( DE)? (ME )?(ENVIAR|MANDAR)( MENSAGENS)?$/.test(normalized) ||
+    /^NAO (QUERO|DESEJO)( MAIS)? (RECEBER|PARTICIPAR|MENSAGENS)/.test(normalized) ||
+    /^ME (REMOVA|RETIRE)( DA LISTA)?$/.test(normalized)
+  );
 }
 
 export async function refreshFollowupCampaignMetrics(db: PrismaClient, campaignId: string) {

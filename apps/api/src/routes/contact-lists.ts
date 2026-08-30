@@ -23,7 +23,21 @@ export async function contactListRoutes(app: FastifyInstance) {
   app.get('/contact-lists/:id/contacts', { preHandler: read }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const query = listSchema.parse(request.query);
-    const list = await db.contactList.findFirst({ where: { id, isActive: true } });
+    const list = await db.contactList.findFirst({
+      where: { id, isActive: true },
+      include: {
+        sourceImport: {
+          select: {
+            editionName: true,
+            landingPageUrl: true,
+            consentSource: true,
+            consentText: true,
+            consentVersion: true,
+            consentAt: true,
+          },
+        },
+      },
+    });
     if (!list) return reply.status(404).send({ message: 'Público não encontrado' });
     const where = { listMemberships: { some: { listId: id } } };
     const [contacts, total] = await Promise.all([
