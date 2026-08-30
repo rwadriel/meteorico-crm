@@ -196,6 +196,12 @@ export function normalizePhone(raw: string): string | null {
     return null;
   }
 
+  // Meta may identify a Brazilian mobile without the ninth digit. Keep CSV
+  // imports on the same canonical identity used by inbound WhatsApp webhooks.
+  if (/^55\d{2}[6-9]\d{7}$/.test(digits)) {
+    digits = `${digits.slice(0, 4)}9${digits.slice(4)}`;
+  }
+
   return digits;
 }
 

@@ -7,11 +7,19 @@ describe('normalizePhone', () => {
   });
 
   it('normalizes 10-digit BR number', () => {
-    expect(normalizePhone('1199990000')).toBe('551199990000');
+    expect(normalizePhone('1199990000')).toBe('5511999990000');
   });
 
   it('keeps already-prefixed 55 number', () => {
     expect(normalizePhone('5511999990000')).toBe('5511999990000');
+  });
+
+  it('canonicalizes a Brazilian mobile missing the ninth digit', () => {
+    expect(normalizePhone('55 91 8 7654-321')).toBe('5591987654321');
+  });
+
+  it('does not insert a ninth digit into a Brazilian landline', () => {
+    expect(normalizePhone('55 91 3234-5678')).toBe('559132345678');
   });
 
   it('handles +55 international format', () => {
@@ -83,7 +91,7 @@ describe('parseContactsCsv – header-based', () => {
     const csv = 'nome,email,aluno\nAna,ana@test.dev,sim';
     const { headerErrors } = parseContactsCsv(csv);
     expect(headerErrors).toBeDefined();
-    expect(headerErrors!.some(e => e.includes('telefone'))).toBe(true);
+    expect(headerErrors!.some((e) => e.includes('telefone'))).toBe(true);
   });
 
   // ─── Test 4: Invalid/unrecognized header ─────────────────────────
@@ -131,11 +139,9 @@ describe('parseContactsCsv – header-based', () => {
   });
 
   it('normalizes purchase status values with accents and underscores', () => {
-    const csv = [
-      'whatsapp,status_compra',
-      '11999990013,não_comprou',
-      '11999990014,comprou',
-    ].join('\n');
+    const csv = ['whatsapp,status_compra', '11999990013,não_comprou', '11999990014,comprou'].join(
+      '\n',
+    );
     const { rows } = parseContactsCsv(csv);
     expect(rows[0].purchaseStatus).toBe('not_purchased');
     expect(rows[1].purchaseStatus).toBe('purchased');
@@ -144,11 +150,7 @@ describe('parseContactsCsv – header-based', () => {
   // ─── Test 9: Duplicate phone in same CSV ─────────────────────────
 
   it('9. handles duplicate phone in same CSV (both rows parsed)', () => {
-    const csv = [
-      'telefone,nome',
-      '11999990014,Primeira',
-      '11999990014,Segunda',
-    ].join('\n');
+    const csv = ['telefone,nome', '11999990014,Primeira', '11999990014,Segunda'].join('\n');
     const { rows } = parseContactsCsv(csv);
     expect(rows).toHaveLength(2);
     expect(rows[0].phone).toBe(rows[1].phone);
@@ -206,7 +208,7 @@ describe('parseContactsCsv – header-based', () => {
     const csv = 'telefone,nome,nome\n11999990018,A,B';
     const { headerErrors } = parseContactsCsv(csv);
     expect(headerErrors).toBeDefined();
-    expect(headerErrors!.some(e => e.includes('Duplicate'))).toBe(true);
+    expect(headerErrors!.some((e) => e.includes('Duplicate'))).toBe(true);
   });
 
   it('preserves ultima_edicao and quantidade_participacoes for audit', () => {
@@ -217,7 +219,8 @@ describe('parseContactsCsv – header-based', () => {
   });
 
   it('recognizes WhatsApp/celular headers and purchase status', () => {
-    const csv = 'whatsapp,nome,comprou,origem_campanha\n(91) 99999-9999,Contato Ficticio,sim,grupo-42';
+    const csv =
+      'whatsapp,nome,comprou,origem_campanha\n(91) 99999-9999,Contato Ficticio,sim,grupo-42';
     const { rows, errors } = parseContactsCsv(csv);
     expect(errors).toHaveLength(0);
     expect(rows[0]).toMatchObject({
@@ -248,10 +251,7 @@ describe('parseParticipationsCsv – header-based', () => {
   });
 
   it('parses participation CSV in different column order', () => {
-    const csv = [
-      'campanha,telefone,origem,aluno_atual',
-      '40,91999990020,csv,nao',
-    ].join('\n');
+    const csv = ['campanha,telefone,origem,aluno_atual', '40,91999990020,csv,nao'].join('\n');
 
     const { rows, errors, headerErrors } = parseParticipationsCsv(csv);
     expect(headerErrors).toBeUndefined();
@@ -265,7 +265,7 @@ describe('parseParticipationsCsv – header-based', () => {
     const csv = 'telefone,origem\n11999990021,csv';
     const { headerErrors } = parseParticipationsCsv(csv);
     expect(headerErrors).toBeDefined();
-    expect(headerErrors!.some(e => e.includes('campanha'))).toBe(true);
+    expect(headerErrors!.some((e) => e.includes('campanha'))).toBe(true);
   });
 
   it('reports error for missing campaign number', () => {
@@ -287,11 +287,7 @@ describe('parseParticipationsCsv – header-based', () => {
   // ─── Test 11: Same phone + same campaign twice ───────────────────
 
   it('11. handles same phone + same campaign in CSV (both rows parsed, dedup at import)', () => {
-    const csv = [
-      'telefone,campanha',
-      '91999990022,40',
-      '91999990022,40',
-    ].join('\n');
+    const csv = ['telefone,campanha', '91999990022,40', '91999990022,40'].join('\n');
     const { rows } = parseParticipationsCsv(csv);
     expect(rows).toHaveLength(2);
   });
@@ -299,12 +295,9 @@ describe('parseParticipationsCsv – header-based', () => {
   // ─── Test 12: Same phone + different campaigns ───────────────────
 
   it('12. handles same phone in different campaigns', () => {
-    const csv = [
-      'telefone,campanha',
-      '91999990023,27',
-      '91999990023,39',
-      '91999990023,40',
-    ].join('\n');
+    const csv = ['telefone,campanha', '91999990023,27', '91999990023,39', '91999990023,40'].join(
+      '\n',
+    );
     const { rows } = parseParticipationsCsv(csv);
     expect(rows).toHaveLength(3);
     expect(rows[0].campaignNumber).toBe(27);

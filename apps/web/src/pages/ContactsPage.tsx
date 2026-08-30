@@ -231,6 +231,9 @@ export function ContactsPage() {
             Base de leads com compra, origem, opt-out e último envio
           </p>
         </div>
+        <a className="btn btn-secondary" href={`${API}/api/contacts/opt-outs/export.csv`}>
+          Exportar opt-outs
+        </a>
       </div>
 
       {stats && (

@@ -317,9 +317,23 @@ export async function followupRoutes(app: FastifyInstance) {
     const messages = await db.followupCampaignMessage.findMany({
       where: { campaignId: id },
       orderBy: { createdAt: 'asc' },
-      include: { contact: { select: { normalizedPhone: true } } },
+      include: {
+        contact: {
+          select: {
+            normalizedPhone: true,
+            optOutAt: true,
+            preferences: {
+              where: { channel: 'whatsapp', optedOut: true },
+              take: 1,
+              select: { optedOut: true },
+            },
+          },
+        },
+      },
     });
-    const rows = ['telefone,status,enviado_em,entregue_em,lido_em,respondeu,erro'];
+    const rows = [
+      'telefone,status,enviado_em,entregue_em,lido_em,respondeu,opt_out,opt_out_em,erro',
+    ];
     for (const message of messages) {
       rows.push(
         [
@@ -329,6 +343,8 @@ export async function followupRoutes(app: FastifyInstance) {
           csvCell(message.deliveredAt?.toISOString() ?? ''),
           csvCell(message.readAt?.toISOString() ?? ''),
           message.repliedAt ? 'sim' : 'nao',
+          message.contact.preferences[0]?.optedOut ? 'sim' : 'nao',
+          csvCell(message.contact.optOutAt?.toISOString() ?? ''),
           csvCell(message.errorCode ?? ''),
         ].join(','),
       );

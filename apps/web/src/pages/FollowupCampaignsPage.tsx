@@ -286,6 +286,7 @@ export function FollowupCampaignsPage() {
     { key: 'deliveredCount', header: 'Entregues' },
     { key: 'readCount', header: 'Lidas' },
     { key: 'repliedCount', header: 'Respostas' },
+    { key: 'optOutCount', header: 'Opt-outs' },
     {
       key: 'actions',
       header: 'Ações',

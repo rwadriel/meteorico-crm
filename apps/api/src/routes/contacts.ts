@@ -95,6 +95,54 @@ export async function contactRoutes(app: FastifyInstance) {
   );
 
   app.get(
+    '/contacts/opt-outs/export.csv',
+    {
+      preHandler: requirePermission('contacts', 'read'),
+    },
+    async (_request, reply) => {
+      const contacts = await db.contact.findMany({
+        where: { preferences: { some: { channel: 'whatsapp', optedOut: true } } },
+        orderBy: { optOutAt: 'desc' },
+        select: {
+          name: true,
+          normalizedPhone: true,
+          phone: true,
+          optOutAt: true,
+          preferences: {
+            where: { channel: 'whatsapp', optedOut: true },
+            take: 1,
+            select: { blockedAt: true, reason: true, optInSource: true },
+          },
+          listMemberships: {
+            where: { list: { isActive: true } },
+            select: { list: { select: { name: true } } },
+          },
+        },
+      });
+
+      const rows = [
+        'telefone,nome,opt_out_em,motivo,origem_consentimento,publicos',
+        ...contacts.map((contact) => {
+          const preference = contact.preferences[0];
+          return [
+            csvCell(contact.normalizedPhone ?? contact.phone ?? ''),
+            csvCell(contact.name),
+            csvCell((contact.optOutAt ?? preference?.blockedAt)?.toISOString() ?? ''),
+            csvCell(optOutReasonLabel(preference?.reason ?? '')),
+            csvCell(preference?.optInSource ?? ''),
+            csvCell(contact.listMemberships.map((membership) => membership.list.name).join(' | ')),
+          ].join(',');
+        }),
+      ];
+
+      return reply
+        .type('text/csv; charset=utf-8')
+        .header('Content-Disposition', 'attachment; filename="opt-outs-whatsapp.csv"')
+        .send(`\uFEFF${rows.join('\n')}`);
+    },
+  );
+
+  app.get(
     '/contacts',
     {
       preHandler: requirePermission('contacts', 'read'),
@@ -327,4 +375,16 @@ function maskEmail(email: string): string {
 function maskPhone(phone: string | null): string | null {
   if (!phone) return null;
   return phone.length < 8 ? '***' : `${phone.slice(0, 4)}***${phone.slice(-2)}`;
+}
+
+function csvCell(value: string): string {
+  const safe = /^[=+\-@]/.test(value) ? `'${value}` : value;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
+function optOutReasonLabel(reason: string): string {
+  if (reason === 'keyword') return 'Resposta do contato';
+  if (reason === 'admin_phone_lookup') return 'Bloqueio manual por telefone';
+  if (reason === 'admin') return 'Bloqueio manual';
+  return reason || 'Não informado';
 }
