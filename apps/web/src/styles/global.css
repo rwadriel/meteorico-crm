@@ -1821,6 +1821,9 @@ body {
   border-color: rgba(255, 255, 255, 0.075);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable;
 }
 .table { font-size: 0.73rem; }
 .table th {
@@ -1852,7 +1855,15 @@ body {
   border-color: rgba(255, 255, 255, 0.1);
   box-shadow: 0 36px 100px rgba(0, 0, 0, 0.65);
 }
-.modal { border-radius: 1.35rem; }
+.modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 1.35rem;
+}
+.modal-header,
+.modal-footer { flex-shrink: 0; background: rgba(13, 17, 24, 0.96); }
+.modal-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
 .modal-header,
 .modal-footer,
 .drawer-header,
@@ -1915,6 +1926,15 @@ body {
   .topbar { padding: 0 1rem; }
   .card { border-radius: 0.9rem; }
   .login-card { padding: 1.6rem; border-radius: 1.1rem; }
+  .modal-overlay { align-items: stretch; padding: 0.5rem; }
+  .modal { max-height: calc(100dvh - 1rem); border-radius: 1rem; }
+  .modal-header { padding: 0.9rem 1rem; }
+  .modal-body { padding: 1rem; }
+  .modal-footer { padding: 0.75rem 1rem; }
+  .modal-footer .btn { flex: 1; }
+  .table-container {
+    background-image: linear-gradient(90deg, transparent calc(100% - 1.5rem), rgba(140, 240, 0, 0.055));
+  }
 }
 
 

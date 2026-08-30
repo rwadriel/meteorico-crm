@@ -361,7 +361,6 @@ export function FollowupCampaignsPage() {
         >
           <Metric label="Total de contatos" value={audience.total} />
           <Metric label="Elegíveis" value={audience.eligible} />
-          <Metric label="Compradores" value={audience.buyers} />
           <Metric label="Opt-outs" value={audience.optOuts} />
           <Metric label="Telefones inválidos" value={audience.invalidPhones} />
         </div>
