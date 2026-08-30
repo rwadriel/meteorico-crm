@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { DashboardPage } from '../pages/DashboardPage.js';
 
 function mockDashboard(
@@ -35,8 +35,9 @@ describe('DashboardPage', () => {
       expect(screen.getByText('17')).toBeDefined();
     });
 
-    expect(screen.getByText('Total de contatos').parentElement?.textContent).toContain('40');
-    expect(screen.getByText('Campanhas criadas').parentElement?.textContent).toContain('17');
+    const indicators = within(screen.getByLabelText('Indicadores principais'));
+    expect(indicators.getByText('Contatos').parentElement?.parentElement?.textContent).toContain('40');
+    expect(indicators.getByText('Campanhas').parentElement?.parentElement?.textContent).toContain('17');
     expect(globalThis.fetch).toHaveBeenCalledWith('/api/analytics/dashboard', {
       credentials: 'include',
     });
@@ -47,8 +48,9 @@ describe('DashboardPage', () => {
     render(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('Total de contatos').parentElement?.textContent).toContain('0');
-      expect(screen.getByText('Campanhas criadas').parentElement?.textContent).toContain('0');
+      const indicators = within(screen.getByLabelText('Indicadores principais'));
+      expect(indicators.getByText('Contatos').parentElement?.parentElement?.textContent).toContain('0');
+      expect(indicators.getByText('Campanhas').parentElement?.parentElement?.textContent).toContain('0');
     });
   });
 
@@ -57,8 +59,9 @@ describe('DashboardPage', () => {
     render(<DashboardPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('Elegíveis para follow-up').parentElement?.textContent).toContain('0');
-      expect(screen.getByText('Campanhas criadas').parentElement?.textContent).toContain('17');
+      const indicators = within(screen.getByLabelText('Indicadores principais'));
+      expect(indicators.getByText('Elegíveis').parentElement?.parentElement?.textContent).toContain('0');
+      expect(indicators.getByText('Campanhas').parentElement?.parentElement?.textContent).toContain('17');
     });
   });
 });

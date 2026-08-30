@@ -30,9 +30,9 @@ export function LoginPage() {
     <div className="login-page">
       <div className="login-card">
         <div className="login-header">
-          <div className="login-logo">Meteorico</div>
+          <div className="login-logo">Meteórico</div>
           <h1 className="login-title">Entrar no CRM</h1>
-          <p className="login-subtitle">Gerencie seus lancamentos</p>
+          <p className="login-subtitle">Gerencie seus lançamentos</p>
         </div>
 
         {error && (
@@ -80,7 +80,7 @@ export function LoginPage() {
           </button>
         </form>
 
-        <div className="login-footer">Meteorico CRM v0.6.1</div>
+        <div className="login-footer">Meteórico CRM v0.7.0</div>
       </div>
     </div>
   );

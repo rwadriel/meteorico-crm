@@ -70,7 +70,7 @@ export function AdminLayout(): React.ReactElement {
       <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-header">
           <span className="sidebar-logo">☄</span>
-          <span className="sidebar-title">Meteorico</span>
+          <span className="sidebar-title">Meteórico</span>
           <button
             className="sidebar-close"
             onClick={() => setSidebarOpen(false)}
@@ -112,7 +112,7 @@ export function AdminLayout(): React.ReactElement {
           </button>
           <Breadcrumbs />
           <div className="topbar-right">
-            <span className="topbar-version">v0.6.1</span>
+            <span className="topbar-version">v0.7.0</span>
           </div>
         </header>
 
