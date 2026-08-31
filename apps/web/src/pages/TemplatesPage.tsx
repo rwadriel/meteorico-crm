@@ -5,6 +5,7 @@ const API = import.meta.env.VITE_API_URL ?? '';
 
 type Category = 'MARKETING' | 'UTILITY';
 type SuggestedCategory = Category | 'AUTHENTICATION';
+type TemplateButton = { type: 'URL' | 'QUICK_REPLY'; text: string; url?: string };
 
 interface ManagedTemplate {
   id: string;
@@ -22,6 +23,7 @@ interface ManagedTemplate {
   exampleValues: string[];
   headerFormat: string;
   hasHeaderImage: boolean;
+  buttons: TemplateButton[];
   submittedAt: string | null;
   syncedAt: string | null;
 }
@@ -70,6 +72,7 @@ export function TemplatesPage() {
   const [headerFormat, setHeaderFormat] = useState<'NONE' | 'IMAGE'>('NONE');
   const [headerImage, setHeaderImage] = useState<File | null>(null);
   const [examples, setExamples] = useState<string[]>([]);
+  const [buttons, setButtons] = useState<TemplateButton[]>([]);
   const [allowCategoryChange, setAllowCategoryChange] = useState(true);
   const [analysis, setAnalysis] = useState<CategoryAnalysis | null>(null);
   const [templateToDelete, setTemplateToDelete] = useState<ManagedTemplate | null>(null);
@@ -164,6 +167,7 @@ export function TemplatesPage() {
       form.set('exampleValues', JSON.stringify(examples));
       form.set('allowCategoryChange', String(allowCategoryChange));
       form.set('headerFormat', headerFormat);
+      form.set('buttons', JSON.stringify(buttons));
       if (headerImage) form.set('headerImage', headerImage);
       const response = await fetch(`${API}/api/templates/meta`, {
         method: 'POST',
@@ -211,6 +215,7 @@ export function TemplatesPage() {
     setHeaderFormat('NONE');
     setHeaderImage(null);
     setExamples([]);
+    setButtons([]);
     setAllowCategoryChange(true);
     setAnalysis(null);
   }
@@ -406,6 +411,91 @@ export function TemplatesPage() {
           onChange={(event) => setFooter(event.target.value)}
           placeholder="Até 60 caracteres; sem variáveis"
         />
+        <div className="form-group">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <label className="label">Botões opcionais</label>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() =>
+                setButtons([
+                  { type: 'URL', text: 'Acessar conteúdo' },
+                  { type: 'QUICK_REPLY', text: 'Quero saber mais' },
+                  { type: 'QUICK_REPLY', text: 'Preciso de ajuda' },
+                  { type: 'QUICK_REPLY', text: 'SAIR' },
+                ])
+              }
+            >
+              Aplicar conjunto recomendado
+            </Button>
+          </div>
+          <p className="text-xs text-secondary" style={{ marginBottom: '0.6rem' }}>
+            O link usa a URL escolhida na campanha e mede cliques. “SAIR” registra o opt-out
+            automaticamente.
+          </p>
+          {buttons.map((button, index) => (
+            <div
+              key={`${button.type}-${index}`}
+              className="grid gap-2"
+              style={{
+                gridTemplateColumns: 'minmax(130px, 0.7fr) minmax(180px, 1fr) auto',
+                marginBottom: '0.6rem',
+              }}
+            >
+              <select
+                className="select"
+                aria-label={`Tipo do botão ${index + 1}`}
+                value={button.type}
+                onChange={(event) =>
+                  setButtons((current) =>
+                    current.map((item, itemIndex) =>
+                      itemIndex === index
+                        ? { ...item, type: event.target.value as TemplateButton['type'] }
+                        : item,
+                    ),
+                  )
+                }
+              >
+                <option value="URL">Link rastreado</option>
+                <option value="QUICK_REPLY">Resposta rápida</option>
+              </select>
+              <input
+                className="input"
+                aria-label={`Texto do botão ${index + 1}`}
+                maxLength={25}
+                value={button.text}
+                onChange={(event) =>
+                  setButtons((current) =>
+                    current.map((item, itemIndex) =>
+                      itemIndex === index ? { ...item, text: event.target.value } : item,
+                    ),
+                  )
+                }
+                placeholder="Texto do botão"
+              />
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() =>
+                  setButtons((current) => current.filter((_, itemIndex) => itemIndex !== index))
+                }
+              >
+                Remover
+              </Button>
+            </div>
+          ))}
+          {buttons.length < 4 && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() =>
+                setButtons((current) => [...current, { type: 'QUICK_REPLY', text: '' }])
+              }
+            >
+              + Adicionar botão
+            </Button>
+          )}
+        </div>
         {analysis && <CategoryAnalysisPanel analysis={analysis} requested={category} />}
         <label className="flex items-start gap-2 text-sm" style={{ marginTop: '1rem' }}>
           <input
@@ -429,7 +519,13 @@ export function TemplatesPage() {
             <img
               src={headerPreviewUrl}
               alt="Prévia do cabeçalho"
-              style={{ width: '100%', maxHeight: '220px', objectFit: 'cover', borderRadius: '12px', marginBottom: '0.8rem' }}
+              style={{
+                width: '100%',
+                maxHeight: '220px',
+                objectFit: 'cover',
+                borderRadius: '12px',
+                marginBottom: '0.8rem',
+              }}
             />
           )}
           {preview || 'A mensagem aparecerá aqui.'}
@@ -438,6 +534,7 @@ export function TemplatesPage() {
               {footer}
             </p>
           )}
+          <TemplateButtons buttons={buttons} />
         </div>
       </Modal>
       <ConfirmDialog
@@ -491,6 +588,7 @@ function TemplateCard({ template, onDelete }: { template: ManagedTemplate; onDel
           {template.footer}
         </p>
       )}
+      <TemplateButtons buttons={template.buttons ?? []} />
       <div className="flex flex-wrap gap-2" style={{ marginTop: '1rem' }}>
         <Badge variant={finalCategory === 'MARKETING' ? 'warning' : 'info'}>
           {CATEGORY_LABELS[finalCategory] ?? finalCategory}
@@ -517,6 +615,30 @@ function TemplateCard({ template, onDelete }: { template: ManagedTemplate; onDel
         </Button>
       </div>
     </article>
+  );
+}
+
+function TemplateButtons({ buttons }: { buttons: TemplateButton[] }) {
+  if (buttons.length === 0) return null;
+  return (
+    <div className="grid gap-2" style={{ marginTop: '0.9rem' }}>
+      {buttons.map((button, index) => (
+        <div
+          key={`${button.type}-${button.text}-${index}`}
+          style={{
+            border: '1px solid var(--border)',
+            borderRadius: '10px',
+            padding: '0.6rem 0.8rem',
+            textAlign: 'center',
+            color: 'var(--primary)',
+            fontWeight: 600,
+          }}
+        >
+          {button.type === 'URL' ? '↗ ' : '↩ '}
+          {button.text}
+        </div>
+      ))}
+    </div>
   );
 }
 

@@ -7,6 +7,13 @@ export { MetaTemplateError } from './meta-template-error.js';
 
 export type MetaTemplateCategory = 'MARKETING' | 'UTILITY';
 export type TemplateCategorySuggestion = MetaTemplateCategory | 'AUTHENTICATION';
+export type MetaTemplateButtonType = 'URL' | 'QUICK_REPLY';
+
+export interface MetaTemplateButton {
+  type: MetaTemplateButtonType;
+  text: string;
+  url?: string;
+}
 
 export interface MetaTemplateInput {
   name: string;
@@ -20,6 +27,7 @@ export interface MetaTemplateInput {
   headerFormat?: 'NONE' | 'IMAGE';
   headerImage?: TemplateHeaderImage;
   headerHandle?: string;
+  buttons?: MetaTemplateButton[];
 }
 
 interface MetaTemplateRecord {
@@ -154,6 +162,7 @@ export function validateMetaTemplateInput(input: MetaTemplateInput): {
   headerFormat: 'NONE' | 'IMAGE';
   headerImage?: TemplateHeaderImage;
   headerHandle?: string;
+  buttons: MetaTemplateButton[];
 } {
   const name = input.name.trim().toLowerCase();
   const body = input.body.trim();
@@ -161,6 +170,7 @@ export function validateMetaTemplateInput(input: MetaTemplateInput): {
   const language = input.language?.trim() || 'pt_BR';
   const exampleValues = input.exampleValues?.map((value) => value.trim()) ?? [];
   const headerFormat = input.headerFormat ?? (input.headerImage ? 'IMAGE' : 'NONE');
+  const buttons = normalizeTemplateButtons(input.buttons);
 
   if (!TECHNICAL_NAME.test(name)) {
     throw new MetaTemplateError(
@@ -215,6 +225,7 @@ export function validateMetaTemplateInput(input: MetaTemplateInput): {
     headerFormat,
     headerImage: input.headerImage,
     headerHandle: input.headerHandle,
+    buttons,
   };
 }
 
@@ -233,6 +244,21 @@ export function buildMetaTemplatePayload(input: MetaTemplateInput): Record<strin
     });
   }
   if (value.footer) components.push({ type: 'FOOTER', text: value.footer });
+  if (value.buttons.length > 0) {
+    components.push({
+      type: 'BUTTONS',
+      buttons: value.buttons.map((button) =>
+        button.type === 'URL'
+          ? {
+              type: 'URL',
+              text: button.text,
+              url: trackingButtonTemplateUrl(),
+              example: [trackingButtonExampleUrl()],
+            }
+          : { type: 'QUICK_REPLY', text: button.text },
+      ),
+    });
+  }
 
   return {
     name: value.name,
@@ -302,11 +328,7 @@ export async function createAndSubmitMetaTemplate(
       data: {
         ...templateData,
         versions: {
-          create: versionCreateData(
-            value,
-            (latest?.version ?? 0) + 1,
-            payload.components,
-          ),
+          create: versionCreateData(value, (latest?.version ?? 0) + 1, payload.components),
         },
       },
       include: { versions: { where: { isCurrent: true }, take: 1 } },
@@ -516,6 +538,60 @@ export async function applyMetaTemplateWebhook(db: PrismaClient, body: unknown):
     }
   }
   return processed;
+}
+
+export function extractMetaTemplateButtons(components: unknown): MetaTemplateButton[] {
+  if (!Array.isArray(components)) return [];
+  const component = components
+    .map(asRecord)
+    .find((item) => String(item?.type ?? '').toUpperCase() === 'BUTTONS');
+  if (!Array.isArray(component?.buttons)) return [];
+  return component.buttons.flatMap((rawButton) => {
+    const button = asRecord(rawButton);
+    const type = String(button?.type ?? '').toUpperCase();
+    const text = stringValue(button?.text)?.trim();
+    if (!text || (type !== 'URL' && type !== 'QUICK_REPLY')) return [];
+    const url = type === 'URL' ? stringValue(button?.url) : undefined;
+    return [{ type: type as MetaTemplateButtonType, text, ...(url ? { url } : {}) }];
+  });
+}
+
+function normalizeTemplateButtons(buttons: MetaTemplateButton[] | undefined): MetaTemplateButton[] {
+  const normalized = (buttons ?? []).map((button) => ({
+    type: button.type,
+    text: button.text.trim(),
+  }));
+  if (normalized.length > 4) {
+    throw new MetaTemplateError('Use no máximo 1 botão de link e 3 respostas rápidas.');
+  }
+  if (normalized.some((button) => !button.text || button.text.length > 25)) {
+    throw new MetaTemplateError('O texto de cada botão deve ter entre 1 e 25 caracteres.');
+  }
+  if (
+    new Set(normalized.map((button) => button.text.toLocaleUpperCase('pt-BR'))).size !==
+    normalized.length
+  ) {
+    throw new MetaTemplateError('Os textos dos botões não podem se repetir.');
+  }
+  if (normalized.filter((button) => button.type === 'URL').length > 1) {
+    throw new MetaTemplateError('Use somente um botão de link por template.');
+  }
+  if (normalized.filter((button) => button.type === 'QUICK_REPLY').length > 3) {
+    throw new MetaTemplateError('Use no máximo três respostas rápidas.');
+  }
+  return normalized;
+}
+
+function trackingButtonTemplateUrl(): string {
+  return trackingButtonExampleUrl().replace(/\/api\/t\/[^/]+$/, '/api/t/{{1}}');
+}
+
+function trackingButtonExampleUrl(): string {
+  const base =
+    process.env.TRACKING_BASE_URL?.trim() ||
+    process.env.CRM_PUBLIC_URL?.trim() ||
+    'http://localhost:5173';
+  return `${base.replace(/\/$/, '')}/api/t/exemplo1234567890`;
 }
 
 function versionCreateData(

@@ -15,6 +15,8 @@ interface Template {
   category: string;
   headerFormat: string;
   hasHeaderImage: boolean;
+  urlMode: 'button' | 'body' | null;
+  buttons: Array<{ type: 'URL' | 'QUICK_REPLY'; text: string; url?: string }>;
 }
 
 interface Audience {
@@ -102,6 +104,7 @@ export function FollowupCampaignsPage() {
   const [name, setName] = useState('');
   const [templateName, setTemplateName] = useState('meteorico_acompanhamento');
   const [templateParameters, setTemplateParameters] = useState<string[]>([]);
+  const [offerUrl, setOfferUrl] = useState('');
   const [audienceListId, setAudienceListId] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmStart, setConfirmStart] = useState<FollowupCampaign | null>(null);
@@ -181,6 +184,7 @@ export function FollowupCampaignsPage() {
         (_, index) => selectedTemplate?.examples[index] ?? '',
       ),
     );
+    setOfferUrl('');
   }, [selectedTemplate?.name, selectedTemplate?.parameterCount]);
   useEffect(() => {
     if (!campaigns.some((campaign) => campaign.status === 'running')) return;
@@ -215,6 +219,7 @@ export function FollowupCampaignsPage() {
           name,
           templateName,
           templateParameters,
+          offerUrl: selectedTemplate?.urlMode === 'button' ? offerUrl : undefined,
           audienceListId,
           batchSize,
           batchIntervalSeconds,
@@ -226,6 +231,7 @@ export function FollowupCampaignsPage() {
       setShowCreate(false);
       setName('');
       setTemplateParameters([]);
+      setOfferUrl('');
       setSuccess('Campanha criada. Execute o Modo Teste antes do envio real.');
       await load();
     } catch (caught) {
@@ -409,7 +415,11 @@ export function FollowupCampaignsPage() {
             <Button
               loading={saving}
               onClick={createCampaign}
-              disabled={!audienceListId || !name.trim()}
+              disabled={
+                !audienceListId ||
+                !name.trim() ||
+                (selectedTemplate?.urlMode === 'button' && !offerUrl.trim())
+              }
             >
               Criar campanha
             </Button>
@@ -458,7 +468,7 @@ export function FollowupCampaignsPage() {
         {Array.from({ length: selectedTemplate?.parameterCount ?? 0 }, (_, index) => (
           <Input
             key={index}
-            label={`${selectedTemplate?.requiresUrl && index === 0 ? 'URL HTTPS' : 'Valor'} para {{${index + 1}}}`}
+            label={`${selectedTemplate?.urlMode === 'body' && index === 0 ? 'URL HTTPS' : 'Valor'} para {{${index + 1}}}`}
             value={templateParameters[index] ?? ''}
             onChange={(event) =>
               setTemplateParameters((current) =>
@@ -469,10 +479,20 @@ export function FollowupCampaignsPage() {
             }
             placeholder={
               selectedTemplate?.examples[index] ||
-              (selectedTemplate?.requiresUrl && index === 0 ? 'https://...' : 'Valor da variável')
+              (selectedTemplate?.urlMode === 'body' && index === 0
+                ? 'https://...'
+                : 'Valor da variável')
             }
           />
         ))}
+        {selectedTemplate?.urlMode === 'button' && (
+          <Input
+            label="Destino do botão (URL HTTPS)"
+            value={offerUrl}
+            onChange={(event) => setOfferUrl(event.target.value)}
+            placeholder="https://..."
+          />
+        )}
         <div
           className="grid gap-4"
           style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}
@@ -519,10 +539,36 @@ export function FollowupCampaignsPage() {
             <img
               src={`${API}/api/templates/meta/${selectedTemplate.id}/header`}
               alt="Imagem do cabeçalho do template"
-              style={{ width: '100%', maxHeight: '220px', objectFit: 'cover', borderRadius: '12px', marginBottom: '0.8rem' }}
+              style={{
+                width: '100%',
+                maxHeight: '220px',
+                objectFit: 'cover',
+                borderRadius: '12px',
+                marginBottom: '0.8rem',
+              }}
             />
           )}
           {renderedPreview}
+          {selectedTemplate && (selectedTemplate.buttons ?? []).length > 0 && (
+            <div className="grid gap-2" style={{ marginTop: '0.9rem' }}>
+              {(selectedTemplate.buttons ?? []).map((button, index) => (
+                <div
+                  key={`${button.type}-${button.text}-${index}`}
+                  style={{
+                    border: '1px solid var(--border)',
+                    borderRadius: '10px',
+                    padding: '0.6rem 0.8rem',
+                    textAlign: 'center',
+                    color: 'var(--primary)',
+                    fontWeight: 600,
+                  }}
+                >
+                  {button.type === 'URL' ? '↗ ' : '↩ '}
+                  {button.text}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         {preflight && (
           <div className="card" style={{ marginTop: '1rem', background: 'var(--bg-secondary)' }}>

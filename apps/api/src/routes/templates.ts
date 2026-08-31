@@ -18,6 +18,7 @@ import {
   analyzeTemplateCategory,
   createAndSubmitMetaTemplate,
   deleteMetaTemplate,
+  extractMetaTemplateButtons,
   listManagedMetaTemplates,
   syncMetaTemplates,
 } from '../services/meta-template.js';
@@ -32,6 +33,15 @@ const metaTemplateSchema = z.object({
   exampleValues: z.array(z.string().trim().min(1).max(1024)).max(10).optional(),
   allowCategoryChange: z.boolean().default(true),
   headerFormat: z.enum(['NONE', 'IMAGE']).default('NONE'),
+  buttons: z
+    .array(
+      z.object({
+        type: z.enum(['URL', 'QUICK_REPLY']),
+        text: z.string().trim().min(1).max(25),
+      }),
+    )
+    .max(4)
+    .optional(),
 });
 
 const classifySchema = z.object({ body: z.string().trim().min(1).max(1024) });
@@ -310,6 +320,7 @@ function serializeManagedTemplate(
     exampleValues: Array.isArray(current?.exampleValues) ? current.exampleValues : [],
     headerFormat: current?.headerFormat || 'NONE',
     hasHeaderImage: Boolean(current?.headerData),
+    buttons: extractMetaTemplateButtons(current?.components),
   };
 }
 
@@ -356,10 +367,21 @@ async function readMetaTemplateInput(request: FastifyRequest) {
       throw new MetaTemplateError('Os exemplos das variáveis estão inválidos.');
     }
   }
+  let buttons: unknown[] = [];
+  if (fields.buttons) {
+    try {
+      const value = JSON.parse(String(fields.buttons));
+      if (!Array.isArray(value)) throw new Error('invalid');
+      buttons = value;
+    } catch {
+      throw new MetaTemplateError('Os botões do template estão inválidos.');
+    }
+  }
   const parsed = metaTemplateSchema.parse({
     ...fields,
     allowCategoryChange: fields.allowCategoryChange !== 'false',
     exampleValues,
+    buttons,
   });
   if (parsed.headerFormat === 'IMAGE' && !headerImage) {
     throw new MetaTemplateError('Selecione uma imagem JPG ou PNG para o cabeçalho.');

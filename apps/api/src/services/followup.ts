@@ -6,6 +6,7 @@ import {
   parseStagingAllowlist,
 } from '@meteorico/shared';
 import { uploadWhatsAppImage } from './meta-media.js';
+import { extractMetaTemplateButtons, type MetaTemplateButton } from './meta-template.js';
 
 export const FOLLOWUP_TEMPLATES = [
   {
@@ -95,6 +96,11 @@ export async function getAvailableFollowupTemplates(db: PrismaClient) {
       const examples = Array.isArray(template.versions[0]!.exampleValues)
         ? template.versions[0]!.exampleValues.map(String)
         : [];
+      const buttons = extractMetaTemplateButtons(template.versions[0]!.components);
+      const hasTrackedUrlButton = buttons.some(
+        (button) => button.type === 'URL' && button.url?.includes('{{1}}'),
+      );
+      const bodyRequiresUrl = parameterCount > 0 && /\b(link|url|acesse|acessar)\b/i.test(preview);
       return {
         id: template.id,
         name: template.name,
@@ -103,7 +109,13 @@ export async function getAvailableFollowupTemplates(db: PrismaClient) {
         preview,
         parameterCount,
         examples,
-        requiresUrl: parameterCount > 0 && /\b(link|url|acesse|acessar)\b/i.test(preview),
+        requiresUrl: bodyRequiresUrl || hasTrackedUrlButton,
+        urlMode: hasTrackedUrlButton
+          ? ('button' as const)
+          : bodyRequiresUrl
+            ? ('body' as const)
+            : null,
+        buttons,
         category: template.metaCategory || template.requestedCategory || template.category,
         status: 'approved' as const,
         headerFormat: template.versions[0]!.headerFormat || 'NONE',
@@ -125,6 +137,8 @@ export async function getAvailableFollowupTemplates(db: PrismaClient) {
       ...legacy,
       parameterCount: extractParameterCount(legacy.preview),
       examples: legacy.requiresUrl ? ['https://sua-oferta.com'] : [],
+      urlMode: legacy.requiresUrl ? ('body' as const) : null,
+      buttons: [] as MetaTemplateButton[],
       category: 'MARKETING',
       status: 'approved' as const,
       headerFormat: 'NONE',
@@ -158,8 +172,9 @@ export async function validateFollowupCampaignWithDb(
   if (parameters.some((value) => !value.trim()))
     throw new Error('Preencha todos os valores do template');
 
+  let offerUrl: string | null = null;
   if (template.requiresUrl) {
-    const candidate = parameters[0];
+    const candidate = template.urlMode === 'button' ? input.offerUrl : parameters[0];
     if (!candidate) throw new Error('Este template exige uma URL HTTPS');
     let url: URL;
     try {
@@ -168,8 +183,9 @@ export async function validateFollowupCampaignWithDb(
       throw new Error('Informe uma URL válida para a primeira variável');
     }
     if (url.protocol !== 'https:') throw new Error('A URL da oferta deve usar HTTPS');
+    offerUrl = candidate;
   }
-  return { template, parameters };
+  return { template, parameters, offerUrl };
 }
 
 export async function getAudienceLists(db: PrismaClient) {
@@ -371,6 +387,10 @@ export async function processFollowupBatch(db: PrismaClient, campaignId: string,
     throw new Error('Envio do WhatsApp está desativado');
   }
   campaign = await ensureCampaignHeaderMedia(db, campaign);
+  const templateButtons = await getCampaignTemplateButtons(db, campaign);
+  const hasTrackedUrlButton = templateButtons.some(
+    (button) => button.type === 'URL' && button.url?.includes('{{1}}'),
+  );
 
   const now = new Date();
   const effectiveBatchSize = Math.max(1, Math.min(campaign.batchSize || batchSize, 25));
@@ -427,13 +447,17 @@ export async function processFollowupBatch(db: PrismaClient, campaignId: string,
         });
       }
       const parameters = readTemplateParameters(campaign.templateParameters, campaign.offerUrl);
-      if (trackingCode && parameters.length > 0) parameters[0] = trackingPublicUrl(trackingCode);
+      if (trackingCode && parameters.length > 0 && !hasTrackedUrlButton) {
+        parameters[0] = trackingPublicUrl(trackingCode);
+      }
       const metaMessageId = await sendTemplateMessage({
         to: phone,
         templateName: campaign.templateName,
         language: campaign.templateLanguage,
         parameters,
         headerMediaId: campaign.headerMediaId,
+        buttons: templateButtons,
+        trackingCode,
       });
       await db.followupCampaignMessage.update({
         where: { id: message.id },
@@ -680,6 +704,8 @@ async function sendTemplateMessage(input: {
   language: string;
   parameters: string[];
   headerMediaId?: string | null;
+  buttons?: MetaTemplateButton[];
+  trackingCode?: string | null;
 }): Promise<string> {
   const provider = (process.env.WHATSAPP_PRIVATE_PROVIDER ?? 'mock').toLowerCase();
   if (provider === 'mock') return `mock-${crypto.randomUUID()}`;
@@ -694,19 +720,7 @@ async function sendTemplateMessage(input: {
   const safetyEnvironment = process.env.DEPLOYMENT_ENV ?? 'development';
   const recipient = assertStagingRecipientAllowed(input.to, safetyEnvironment, stagingAllowlist);
 
-  const components: Array<Record<string, unknown>> = [];
-  if (input.headerMediaId) {
-    components.push({
-      type: 'header',
-      parameters: [{ type: 'image', image: { id: input.headerMediaId } }],
-    });
-  }
-  if (input.parameters.length > 0) {
-    components.push({
-      type: 'body',
-      parameters: input.parameters.map((text) => ({ type: 'text', text })),
-    });
-  }
+  const components = buildFollowupTemplateComponents(input);
   const response = await fetch(
     `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`,
     {
@@ -735,6 +749,46 @@ async function sendTemplateMessage(input: {
   const id = body?.messages?.[0]?.id;
   if (!id) throw new Error('A Meta não retornou o identificador da mensagem');
   return id;
+}
+
+export function buildFollowupTemplateComponents(input: {
+  parameters: string[];
+  headerMediaId?: string | null;
+  buttons?: MetaTemplateButton[];
+  trackingCode?: string | null;
+}): Array<Record<string, unknown>> {
+  const components: Array<Record<string, unknown>> = [];
+  if (input.headerMediaId) {
+    components.push({
+      type: 'header',
+      parameters: [{ type: 'image', image: { id: input.headerMediaId } }],
+    });
+  }
+  if (input.parameters.length > 0) {
+    components.push({
+      type: 'body',
+      parameters: input.parameters.map((text) => ({ type: 'text', text })),
+    });
+  }
+  input.buttons?.forEach((button, index) => {
+    if (button.type === 'URL' && button.url?.includes('{{1}}') && input.trackingCode) {
+      components.push({
+        type: 'button',
+        sub_type: 'url',
+        index: String(index),
+        parameters: [{ type: 'text', text: input.trackingCode }],
+      });
+    }
+    if (button.type === 'QUICK_REPLY') {
+      components.push({
+        type: 'button',
+        sub_type: 'quick_reply',
+        index: String(index),
+        parameters: [{ type: 'payload', payload: button.text }],
+      });
+    }
+  });
+  return components;
 }
 
 class MetaSendError extends Error {
@@ -808,10 +862,7 @@ async function ensureCampaignHeaderMedia<
     templateLanguage: string;
     headerMediaId: string | null;
   },
->(
-  db: PrismaClient,
-  campaign: T,
-): Promise<T> {
+>(db: PrismaClient, campaign: T): Promise<T> {
   if (campaign.headerMediaId) return campaign;
   const template = await db.messageTemplate.findFirst({
     where: {
@@ -838,6 +889,21 @@ async function ensureCampaignHeaderMedia<
     data: { headerMediaId },
   });
   return { ...campaign, headerMediaId };
+}
+
+async function getCampaignTemplateButtons(
+  db: PrismaClient,
+  campaign: { templateName: string; templateLanguage: string },
+): Promise<MetaTemplateButton[]> {
+  const template = await db.messageTemplate.findFirst({
+    where: {
+      name: campaign.templateName,
+      language: campaign.templateLanguage,
+      isActive: true,
+    },
+    include: { versions: { where: { isCurrent: true }, take: 1 } },
+  });
+  return extractMetaTemplateButtons(template?.versions[0]?.components);
 }
 
 export async function recordFollowupClick(

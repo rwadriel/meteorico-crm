@@ -82,7 +82,12 @@ export interface MetaAccessVerification {
     waba: MetaCheckResult;
     phoneNumber: MetaCheckResult;
   };
-  phoneNumber: { id: string; displayNumber: string; verifiedName: string; qualityRating: string } | null;
+  phoneNumber: {
+    id: string;
+    displayNumber: string;
+    verifiedName: string;
+    qualityRating: string;
+  } | null;
   waba: { id: string; name: string } | null;
   error: string | null;
 }
@@ -241,18 +246,11 @@ export class MetaCloudWhatsAppProvider implements MessagingProvider {
         if (Array.isArray(value.messages)) {
           for (const rawMessage of value.messages) {
             const message = asRecord(rawMessage);
-            const text = asRecord(message?.text);
             const externalMessageId = readString(message?.id);
             const from = readString(message?.from);
             const timestamp = unixSecondsToIso(readString(message?.timestamp));
-            if (
-              !message ||
-              message.type !== 'text' ||
-              !externalMessageId ||
-              !from ||
-              !timestamp ||
-              typeof text?.body !== 'string'
-            ) {
+            const content = inboundMessageContent(message);
+            if (!message || !externalMessageId || !from || !timestamp || !content) {
               continue;
             }
 
@@ -265,8 +263,8 @@ export class MetaCloudWhatsAppProvider implements MessagingProvider {
               message: {
                 externalMessageId,
                 from,
-                content: text.body,
-                messageType: 'text',
+                content,
+                messageType: message.type === 'text' ? 'text' : 'interactive',
                 timestamp,
                 phoneNumberId,
                 ...(source
@@ -323,9 +321,11 @@ export class MetaCloudWhatsAppProvider implements MessagingProvider {
       leadingWhitespace: !!token && token !== token.trimStart(),
       trailingWhitespace: !!token && token !== token.trimEnd(),
       containsNewline: !!token && /[\r\n]/.test(token),
-      wrappedInQuotes: !!token && token.length >= 2 &&
+      wrappedInQuotes:
+        !!token &&
+        token.length >= 2 &&
         ((token.startsWith('"') && token.endsWith('"')) ||
-         (token.startsWith("'") && token.endsWith("'"))),
+          (token.startsWith("'") && token.endsWith("'"))),
       length: token?.length ?? 0,
     };
 
@@ -351,10 +351,9 @@ export class MetaCloudWhatsAppProvider implements MessagingProvider {
     const authHeaders = { Authorization: `Bearer ${effectiveToken}` };
 
     try {
-      const meResp = await fetch(
-        `https://graph.facebook.com/${this.graphApiVersion}/me`,
-        { headers: authHeaders },
-      );
+      const meResp = await fetch(`https://graph.facebook.com/${this.graphApiVersion}/me`, {
+        headers: authHeaders,
+      });
       const meBody = (await meResp.json().catch(() => null)) as unknown;
       result.checks.tokenBasicAuth.httpStatus = meResp.status;
       if (!meResp.ok) {
@@ -367,7 +366,9 @@ export class MetaCloudWhatsAppProvider implements MessagingProvider {
     } catch (e) {
       result.checks.tokenBasicAuth.status = 'failed';
       result.checks.tokenBasicAuth.error = {
-        type: 'NetworkError', code: null, subcode: null,
+        type: 'NetworkError',
+        code: null,
+        subcode: null,
         message: e instanceof Error ? e.message : 'Unknown error',
         fbtrace_id: null,
       };
@@ -396,7 +397,9 @@ export class MetaCloudWhatsAppProvider implements MessagingProvider {
     } catch (e) {
       result.checks.waba.status = 'failed';
       result.checks.waba.error = {
-        type: 'NetworkError', code: null, subcode: null,
+        type: 'NetworkError',
+        code: null,
+        subcode: null,
         message: e instanceof Error ? e.message : 'Unknown error',
         fbtrace_id: null,
       };
@@ -426,13 +429,16 @@ export class MetaCloudWhatsAppProvider implements MessagingProvider {
     } catch (e) {
       result.checks.phoneNumber.status = 'failed';
       result.checks.phoneNumber.error = {
-        type: 'NetworkError', code: null, subcode: null,
+        type: 'NetworkError',
+        code: null,
+        subcode: null,
         message: e instanceof Error ? e.message : 'Unknown error',
         fbtrace_id: null,
       };
     }
 
-    result.authenticated = result.checks.tokenBasicAuth.status === 'ok' &&
+    result.authenticated =
+      result.checks.tokenBasicAuth.status === 'ok' &&
       result.checks.waba.status === 'ok' &&
       result.checks.phoneNumber.status === 'ok';
 
@@ -477,6 +483,27 @@ export class MetaCloudWhatsAppProvider implements MessagingProvider {
       },
     };
   }
+}
+
+function inboundMessageContent(message: Record<string, unknown> | null): string | null {
+  if (!message) return null;
+  if (message.type === 'text') return readString(asRecord(message.text)?.body);
+  if (message.type === 'button') {
+    const button = asRecord(message.button);
+    return readString(button?.text) ?? readString(button?.payload);
+  }
+  if (message.type === 'interactive') {
+    const interactive = asRecord(message.interactive);
+    const buttonReply = asRecord(interactive?.button_reply);
+    const listReply = asRecord(interactive?.list_reply);
+    return (
+      readString(buttonReply?.title) ??
+      readString(buttonReply?.id) ??
+      readString(listReply?.title) ??
+      readString(listReply?.id)
+    );
+  }
+  return null;
 }
 
 function extractMetaError(body: unknown): MetaGraphError {

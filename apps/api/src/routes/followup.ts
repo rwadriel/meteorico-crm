@@ -121,7 +121,7 @@ export async function followupRoutes(app: FastifyInstance) {
 
   app.post('/followup/campaigns', { preHandler: create }, async (request, reply) => {
     const input = createSchema.parse(request.body);
-    const { parameters, template } = await validateFollowupCampaignWithDb(db, input);
+    const { parameters, template, offerUrl } = await validateFollowupCampaignWithDb(db, input);
     const audience = await db.contactList.findFirst({
       where: { id: input.audienceListId, isActive: true },
       select: { id: true, name: true },
@@ -133,7 +133,7 @@ export async function followupRoutes(app: FastifyInstance) {
         name: input.name,
         templateName: input.templateName,
         templateLanguage: template.language,
-        offerUrl: template.requiresUrl ? (parameters[0] ?? null) : null,
+        offerUrl,
         templateParameters: parameters as unknown as Prisma.InputJsonValue,
         audienceListId: audience.id,
         scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : null,

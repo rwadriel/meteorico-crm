@@ -66,6 +66,37 @@ describe('Meta template management', () => {
     });
   });
 
+  it('builds a tracked URL button and quick replies', () => {
+    const payload = buildMetaTemplatePayload({
+      name: 'conteudo_com_botoes',
+      category: 'MARKETING',
+      body: 'O conteúdo está disponível.',
+      buttons: [
+        { type: 'URL', text: 'Acessar conteúdo' },
+        { type: 'QUICK_REPLY', text: 'Quero saber mais' },
+        { type: 'QUICK_REPLY', text: 'SAIR' },
+      ],
+    });
+
+    expect(payload).toMatchObject({
+      components: [
+        { type: 'BODY' },
+        {
+          type: 'BUTTONS',
+          buttons: [
+            {
+              type: 'URL',
+              text: 'Acessar conteúdo',
+              url: expect.stringContaining('/api/t/{{1}}'),
+            },
+            { type: 'QUICK_REPLY', text: 'Quero saber mais' },
+            { type: 'QUICK_REPLY', text: 'SAIR' },
+          ],
+        },
+      ],
+    });
+  });
+
   it('rejects skipped variables and missing examples before calling Meta', () => {
     expect(() =>
       validateMetaTemplateInput({

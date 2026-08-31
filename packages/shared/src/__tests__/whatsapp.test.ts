@@ -106,6 +106,37 @@ describe('MetaCloudWhatsAppProvider', () => {
     });
   });
 
+  it.each([
+    {
+      type: 'button',
+      button: { text: 'SAIR', payload: 'SAIR' },
+    },
+    {
+      type: 'interactive',
+      interactive: { type: 'button_reply', button_reply: { id: 'optout', title: 'SAIR' } },
+    },
+  ])('parses an inbound quick reply from a template', (reply) => {
+    const provider = createProvider();
+    const result = provider.parseWebhook(
+      {},
+      metaPayload({
+        messages: [
+          {
+            id: 'wamid.quick-reply-1',
+            from: '5591999990001',
+            timestamp: '1786400000',
+            ...reply,
+          },
+        ],
+      }),
+    );
+
+    expect(result?.[0]).toMatchObject({
+      type: 'message',
+      message: { content: 'SAIR', messageType: 'interactive' },
+    });
+  });
+
   it.each(['sent', 'delivered', 'read', 'failed'] as const)(
     'parses the %s delivery status',
     (status) => {
