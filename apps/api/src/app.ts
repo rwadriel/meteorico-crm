@@ -38,6 +38,13 @@ import { createLogger } from './logger.js';
 
 const isProduction = (process.env.NODE_ENV ?? 'development') === 'production';
 
+function configuredCorsOrigins(): string[] {
+  return (process.env.API_CORS_ORIGINS ?? 'http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+}
+
 export async function buildApp(): Promise<FastifyInstance> {
   assertRuntimeConfig('api');
 
@@ -47,7 +54,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await app.register(cors, {
-    origin: (process.env.API_CORS_ORIGINS ?? 'http://localhost:5173').split(','),
+    origin: configuredCorsOrigins(),
     credentials: true,
   });
 

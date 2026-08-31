@@ -7,7 +7,8 @@ describe('CSRF protection', () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    process.env.API_CORS_ORIGINS = 'http://localhost:5173,https://app.meteorico.dev';
+    process.env.API_CORS_ORIGINS =
+      'http://localhost:5173,https://app.meteorico.dev,https://meteorico.musicalucrativa.com.br/';
 
     app = Fastify({ logger: false });
     await app.register(cookie);
@@ -51,6 +52,19 @@ describe('CSRF protection', () => {
       method: 'PUT',
       url: '/api/test',
       headers: { origin: 'https://app.meteorico.dev', 'content-type': 'application/json' },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('allows requests from the official CRM domain', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/test',
+      headers: {
+        origin: 'https://meteorico.musicalucrativa.com.br',
+        'content-type': 'application/json',
+      },
       payload: {},
     });
     expect(res.statusCode).toBe(200);

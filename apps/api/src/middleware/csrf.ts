@@ -16,7 +16,10 @@ const FORM_CONTENT_TYPES = [
 ];
 
 function getAllowedOrigins(): string[] {
-  return (process.env.API_CORS_ORIGINS ?? 'http://localhost:5173').split(',').map((o) => o.trim());
+  return (process.env.API_CORS_ORIGINS ?? 'http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/$/, ''))
+    .filter(Boolean);
 }
 
 function isExempt(path: string): boolean {
@@ -54,7 +57,8 @@ export async function csrfProtection(app: FastifyInstance): Promise<void> {
 
     if (origin) {
       const allowed = getAllowedOrigins();
-      if (!allowed.includes(origin)) {
+      const normalizedOrigin = origin.replace(/\/$/, '');
+      if (!allowed.includes(normalizedOrigin)) {
         request.log.warn(
           { origin, method: request.method, url: request.url },
           'CSRF: origin rejected',

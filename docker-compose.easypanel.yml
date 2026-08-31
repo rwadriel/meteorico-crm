@@ -32,7 +32,7 @@ services:
       DEPLOYMENT_ENV: production
       API_PORT: "4080"
       API_HOST: 0.0.0.0
-      API_CORS_ORIGINS: ${CRM_PUBLIC_URL}
+      API_CORS_ORIGINS: ${CRM_PUBLIC_URL},https://meteorico.musicalucrativa.com.br,https://zapgrupos-meteorico-crm.gq2dju.easypanel.host
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       SESSION_SECRET: ${SESSION_SECRET}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
