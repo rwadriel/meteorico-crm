@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Button, Table, Alert, Badge, Modal, Input } from '../components/index.js';
+import { useAuth } from '../context/AuthContext.js';
 
 const API = import.meta.env.VITE_API_URL ?? '';
 
@@ -22,7 +23,25 @@ interface WhatsAppStatus {
   requiredTemplates: number;
 }
 
+interface AccessRole {
+  id: string;
+  name: string;
+  description: string;
+}
+
+interface SystemUser {
+  id: string;
+  name: string;
+  email: string;
+  isActive: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  role: AccessRole;
+  [k: string]: unknown;
+}
+
 export function SettingsPage() {
+  const { user: currentUser } = useAuth();
   const [settings, setSettings] = useState<Setting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -35,6 +54,18 @@ export function SettingsPage() {
   const [newPassword, setNewPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
   const [whatsAppStatus, setWhatsAppStatus] = useState<WhatsAppStatus | null>(null);
+  const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
+  const [accessRoles, setAccessRoles] = useState<AccessRole[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [showCreateUser, setShowCreateUser] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
+  const [newUserRoleId, setNewUserRoleId] = useState('');
+  const [userSaving, setUserSaving] = useState(false);
+  const [resetUser, setResetUser] = useState<SystemUser | null>(null);
+  const [resetUserPassword, setResetUserPassword] = useState('');
+  const canManageUsers = currentUser?.role === 'owner';
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -61,6 +92,106 @@ export function SettingsPage() {
       .then(setWhatsAppStatus)
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Falha ao carregar o status do WhatsApp'));
   }, []);
+
+  const fetchUsers = useCallback(async () => {
+    if (!canManageUsers) return;
+    setUsersLoading(true);
+    try {
+      const [usersResponse, rolesResponse] = await Promise.all([
+        fetch(`${API}/api/users`, { credentials: 'include' }),
+        fetch(`${API}/api/users/roles`, { credentials: 'include' }),
+      ]);
+      if (!usersResponse.ok || !rolesResponse.ok) throw new Error('Falha ao carregar usuários');
+      const [usersBody, rolesBody] = await Promise.all([
+        usersResponse.json() as Promise<{ users?: SystemUser[] }>,
+        rolesResponse.json() as Promise<{ roles?: AccessRole[] }>,
+      ]);
+      const roles = Array.isArray(rolesBody.roles) ? rolesBody.roles : [];
+      setSystemUsers(Array.isArray(usersBody.users) ? usersBody.users : []);
+      setAccessRoles(roles);
+      setNewUserRoleId((current) => current || roles.find((role) => role.name === 'operator')?.id || roles[0]?.id || '');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Falha ao carregar usuários');
+    } finally {
+      setUsersLoading(false);
+    }
+  }, [canManageUsers]);
+
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+
+  async function handleCreateUser() {
+    setUserSaving(true);
+    setError('');
+    try {
+      const response = await fetch(`${API}/api/users`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newUserName,
+          email: newUserEmail,
+          password: newUserPassword,
+          roleId: newUserRoleId,
+        }),
+      });
+      const body = await response.json().catch(() => null) as { message?: string } | null;
+      if (!response.ok) throw new Error(body?.message ?? 'Não foi possível criar o usuário');
+      setShowCreateUser(false);
+      setNewUserName('');
+      setNewUserEmail('');
+      setNewUserPassword('');
+      setSuccess('Usuário criado. Ele já pode acessar o CRM.');
+      await fetchUsers();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Não foi possível criar o usuário');
+    } finally {
+      setUserSaving(false);
+    }
+  }
+
+  async function handleToggleUser(user: SystemUser) {
+    setUserSaving(true);
+    setError('');
+    try {
+      const response = await fetch(`${API}/api/users/${user.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: !user.isActive }),
+      });
+      const body = await response.json().catch(() => null) as { message?: string } | null;
+      if (!response.ok) throw new Error(body?.message ?? 'Não foi possível alterar o acesso');
+      setSuccess(user.isActive ? 'Acesso desativado e sessões encerradas.' : 'Acesso reativado.');
+      await fetchUsers();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Não foi possível alterar o acesso');
+    } finally {
+      setUserSaving(false);
+    }
+  }
+
+  async function handleResetUserPassword() {
+    if (!resetUser) return;
+    setUserSaving(true);
+    setError('');
+    try {
+      const response = await fetch(`${API}/api/users/${resetUser.id}/reset-password`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: resetUserPassword }),
+      });
+      const body = await response.json().catch(() => null) as { message?: string } | null;
+      if (!response.ok) throw new Error(body?.message ?? 'Não foi possível redefinir a senha');
+      setResetUser(null);
+      setResetUserPassword('');
+      setSuccess(body?.message ?? 'Senha redefinida.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Não foi possível redefinir a senha');
+    } finally {
+      setUserSaving(false);
+    }
+  }
 
   function openEdit(s: Setting) {
     setEditSetting(s);
@@ -143,6 +274,63 @@ export function SettingsPage() {
     },
   ];
 
+  const userColumns = [
+    {
+      key: 'name',
+      header: 'Usuário',
+      render: (user: SystemUser) => (
+        <div>
+          <p className="font-semibold">{user.name}</p>
+          <p className="text-xs text-secondary">{user.email}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'role',
+      header: 'Perfil',
+      render: (user: SystemUser) => roleLabel(user.role.name),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (user: SystemUser) => (
+        <Badge variant={user.isActive ? 'success' : 'neutral'}>
+          {user.isActive ? 'Ativo' : 'Desativado'}
+        </Badge>
+      ),
+    },
+    {
+      key: 'lastLoginAt',
+      header: 'Último acesso',
+      render: (user: SystemUser) => user.lastLoginAt
+        ? new Date(user.lastLoginAt).toLocaleString('pt-BR')
+        : 'Nunca acessou',
+    },
+    {
+      key: 'actions',
+      header: '',
+      render: (user: SystemUser) => {
+        if (user.id === currentUser?.id) return <Badge variant="info">Você</Badge>;
+        if (user.role.name === 'owner') return <Badge variant="neutral">Proprietário</Badge>;
+        return (
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" onClick={() => { setResetUser(user); setResetUserPassword(''); }}>
+              Redefinir senha
+            </Button>
+            <Button
+              size="sm"
+              variant={user.isActive ? 'danger' : 'secondary'}
+              disabled={userSaving}
+              onClick={() => handleToggleUser(user)}
+            >
+              {user.isActive ? 'Desativar' : 'Reativar'}
+            </Button>
+          </div>
+        );
+      },
+    },
+  ];
+
   return (
     <div>
       <div className="content-header">
@@ -184,6 +372,23 @@ export function SettingsPage() {
         </div>
       </div>
 
+      {canManageUsers && (
+        <div className="card" style={{ marginBottom: '1rem' }}>
+          <div className="flex items-center justify-between gap-3" style={{ marginBottom: '1rem' }}>
+            <div>
+              <h2>Usuários com acesso</h2>
+              <p className="text-sm text-secondary">Crie acessos individuais e encerre permissões sem compartilhar sua senha.</p>
+            </div>
+            <Button onClick={() => setShowCreateUser(true)}>+ Adicionar usuário</Button>
+          </div>
+          {usersLoading ? (
+            <div style={{ padding: '2rem', textAlign: 'center' }}>Carregando usuários...</div>
+          ) : (
+            <Table columns={userColumns} data={systemUsers} emptyMessage="Nenhum usuário encontrado" />
+          )}
+        </div>
+      )}
+
       <div className="card">
         {loading ? (
           <div style={{ padding: '2rem', textAlign: 'center' }}>Carregando...</div>
@@ -219,10 +424,83 @@ export function SettingsPage() {
         </div>
         <Input label="Descricao" value={editDescription} onChange={(e) => setEditDescription(e.target.value)} />
       </Modal>
+
+      <Modal
+        open={showCreateUser}
+        onClose={() => setShowCreateUser(false)}
+        title="Adicionar usuário"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowCreateUser(false)}>Cancelar</Button>
+            <Button
+              loading={userSaving}
+              disabled={!newUserName.trim() || !newUserEmail.trim() || newUserPassword.length < 12 || !newUserRoleId}
+              onClick={handleCreateUser}
+            >
+              Criar acesso
+            </Button>
+          </>
+        }
+      >
+        <Input label="Nome" value={newUserName} onChange={(event) => setNewUserName(event.target.value)} autoComplete="off" />
+        <Input label="E-mail" type="email" value={newUserEmail} onChange={(event) => setNewUserEmail(event.target.value)} autoComplete="off" />
+        <Input
+          label="Senha provisória (mínimo 12 caracteres)"
+          type="password"
+          value={newUserPassword}
+          onChange={(event) => setNewUserPassword(event.target.value)}
+          autoComplete="new-password"
+        />
+        <div className="form-group">
+          <label htmlFor="new-user-role">Perfil de acesso</label>
+          <select id="new-user-role" className="select" value={newUserRoleId} onChange={(event) => setNewUserRoleId(event.target.value)}>
+            {accessRoles.map((role) => (
+              <option key={role.id} value={role.id}>{roleLabel(role.name)}</option>
+            ))}
+          </select>
+          <p className="text-xs text-secondary">{accessRoles.find((role) => role.id === newUserRoleId)?.description}</p>
+        </div>
+      </Modal>
+
+      <Modal
+        open={resetUser !== null}
+        onClose={() => setResetUser(null)}
+        title={`Redefinir senha — ${resetUser?.name ?? ''}`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setResetUser(null)}>Cancelar</Button>
+            <Button loading={userSaving} disabled={resetUserPassword.length < 12} onClick={handleResetUserPassword}>
+              Salvar nova senha
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-secondary" style={{ marginBottom: '1rem' }}>
+          As sessões abertas desse usuário serão encerradas imediatamente.
+        </p>
+        <Input
+          label="Nova senha (mínimo 12 caracteres)"
+          type="password"
+          value={resetUserPassword}
+          onChange={(event) => setResetUserPassword(event.target.value)}
+          autoComplete="new-password"
+        />
+      </Modal>
     </div>
   );
 }
 
 function StatusText({ label, value }: { label: string; value: string }) {
   return <div><p className="text-xs text-secondary">{label}</p><p className="font-semibold">{value}</p></div>;
+}
+
+function roleLabel(role: string) {
+  const labels: Record<string, string> = {
+    owner: 'Proprietário',
+    admin: 'Administrador',
+    operator: 'Operador',
+    analyst: 'Analista',
+    read_only: 'Somente leitura',
+  };
+  return labels[role] ?? role;
 }

@@ -30,6 +30,7 @@ import { contactRoutes } from './routes/contacts.js';
 import { contactListRoutes } from './routes/contact-lists.js';
 import { auditRoutes } from './routes/audit-logs.js';
 import { settingsRoutes } from './routes/settings.js';
+import { userRoutes } from './routes/users.js';
 import { metaVerifyRoutes } from './routes/meta-verify.js';
 import { followupRoutes } from './routes/followup.js';
 import { csrfProtection } from './middleware/csrf.js';
@@ -114,6 +115,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(queueRoutes);
   await app.register(auditRoutes);
   await app.register(settingsRoutes);
+  await app.register(userRoutes);
   await app.register(metaVerifyRoutes);
   await app.register(followupRoutes);
   await app.register(redirectRoutes);
