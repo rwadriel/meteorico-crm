@@ -20,6 +20,8 @@ interface ManagedTemplate {
   footer: string;
   variableCount: number;
   exampleValues: string[];
+  headerFormat: string;
+  hasHeaderImage: boolean;
   submittedAt: string | null;
   syncedAt: string | null;
 }
@@ -65,6 +67,8 @@ export function TemplatesPage() {
   const [category, setCategory] = useState<Category>('MARKETING');
   const [body, setBody] = useState('');
   const [footer, setFooter] = useState('');
+  const [headerFormat, setHeaderFormat] = useState<'NONE' | 'IMAGE'>('NONE');
+  const [headerImage, setHeaderImage] = useState<File | null>(null);
   const [examples, setExamples] = useState<string[]>([]);
   const [allowCategoryChange, setAllowCategoryChange] = useState(true);
   const [analysis, setAnalysis] = useState<CategoryAnalysis | null>(null);
@@ -73,6 +77,16 @@ export function TemplatesPage() {
 
   const variableCount = useMemo(() => countVariables(body), [body]);
   const preview = useMemo(() => renderPreview(body, examples), [body, examples]);
+  const headerPreviewUrl = useMemo(
+    () => (headerImage ? URL.createObjectURL(headerImage) : ''),
+    [headerImage],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (headerPreviewUrl) URL.revokeObjectURL(headerPreviewUrl);
+    };
+  }, [headerPreviewUrl]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -140,20 +154,21 @@ export function TemplatesPage() {
     setError('');
     setSuccess('');
     try {
+      const form = new FormData();
+      form.set('name', name);
+      form.set('label', label);
+      form.set('language', 'pt_BR');
+      form.set('category', category);
+      form.set('body', body);
+      form.set('footer', footer);
+      form.set('exampleValues', JSON.stringify(examples));
+      form.set('allowCategoryChange', String(allowCategoryChange));
+      form.set('headerFormat', headerFormat);
+      if (headerImage) form.set('headerImage', headerImage);
       const response = await fetch(`${API}/api/templates/meta`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          label,
-          language: 'pt_BR',
-          category,
-          body,
-          footer,
-          exampleValues: examples,
-          allowCategoryChange,
-        }),
+        body: form,
       });
       if (!response.ok) throw new Error(await responseMessage(response));
       setShowCreate(false);
@@ -193,6 +208,8 @@ export function TemplatesPage() {
     setCategory('MARKETING');
     setBody('');
     setFooter('');
+    setHeaderFormat('NONE');
+    setHeaderImage(null);
     setExamples([]);
     setAllowCategoryChange(true);
     setAnalysis(null);
@@ -275,7 +292,12 @@ export function TemplatesPage() {
             </Button>
             <Button
               loading={saving}
-              disabled={!name || !body || examples.some((value) => !value)}
+              disabled={
+                !name ||
+                !body ||
+                examples.some((value) => !value) ||
+                (headerFormat === 'IMAGE' && !headerImage)
+              }
               onClick={submitTemplate}
             >
               Enviar para aprovação
@@ -314,6 +336,39 @@ export function TemplatesPage() {
             <option value="UTILITY">Utility</option>
           </select>
         </div>
+        <div className="form-group">
+          <label className="label" htmlFor="template-header-format">
+            Cabeçalho
+          </label>
+          <select
+            id="template-header-format"
+            className="select"
+            value={headerFormat}
+            onChange={(event) => {
+              const value = event.target.value as 'NONE' | 'IMAGE';
+              setHeaderFormat(value);
+              if (value === 'NONE') setHeaderImage(null);
+            }}
+          >
+            <option value="NONE">Sem imagem</option>
+            <option value="IMAGE">Imagem</option>
+          </select>
+        </div>
+        {headerFormat === 'IMAGE' && (
+          <div className="form-group">
+            <label className="label" htmlFor="template-header-image">
+              Imagem JPG ou PNG
+            </label>
+            <input
+              id="template-header-image"
+              className="input"
+              type="file"
+              accept="image/jpeg,image/png"
+              onChange={(event) => setHeaderImage(event.target.files?.[0] ?? null)}
+            />
+            <span className="text-xs text-secondary">Máximo de 5 MB.</span>
+          </div>
+        )}
         <div className="form-group">
           <label className="label" htmlFor="template-body">
             Corpo da mensagem
@@ -370,6 +425,13 @@ export function TemplatesPage() {
           <p className="text-xs text-secondary" style={{ marginBottom: '0.6rem' }}>
             PRÉVIA
           </p>
+          {headerPreviewUrl && (
+            <img
+              src={headerPreviewUrl}
+              alt="Prévia do cabeçalho"
+              style={{ width: '100%', maxHeight: '220px', objectFit: 'cover', borderRadius: '12px', marginBottom: '0.8rem' }}
+            />
+          )}
           {preview || 'A mensagem aparecerá aqui.'}
           {footer && (
             <p className="text-xs text-secondary" style={{ marginTop: '0.75rem' }}>
@@ -410,6 +472,19 @@ function TemplateCard({ template, onDelete }: { template: ManagedTemplate; onDel
           {STATUS_LABELS[template.status] ?? template.status}
         </Badge>
       </div>
+      {template.hasHeaderImage && (
+        <img
+          src={`${API}/api/templates/meta/${template.id}/header`}
+          alt={`Cabeçalho de ${template.label}`}
+          style={{
+            width: '100%',
+            maxHeight: '220px',
+            objectFit: 'cover',
+            borderRadius: '12px',
+            marginBottom: '0.75rem',
+          }}
+        />
+      )}
       <p style={{ whiteSpace: 'pre-line', lineHeight: 1.6 }}>{template.body}</p>
       {template.footer && (
         <p className="text-xs text-secondary" style={{ marginTop: '0.75rem' }}>

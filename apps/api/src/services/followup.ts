@@ -1,9 +1,11 @@
 import type { Prisma, PrismaClient } from '@meteorico/database';
+import { randomBytes } from 'node:crypto';
 import {
   OutboundBlockedError,
   assertStagingRecipientAllowed,
   parseStagingAllowlist,
 } from '@meteorico/shared';
+import { uploadWhatsAppImage } from './meta-media.js';
 
 export const FOLLOWUP_TEMPLATES = [
   {
@@ -82,8 +84,10 @@ export async function getAvailableFollowupTemplates(db: PrismaClient) {
   });
   const result = managed
     .filter((template) => {
-      const content = template.versions[0]?.content;
-      return Boolean(content) && !/\{\{(?!\d+\}\})/.test(content!);
+      const version = template.versions[0];
+      const content = version?.content;
+      const mediaReady = version?.headerFormat !== 'IMAGE' || Boolean(version.headerData);
+      return Boolean(content) && mediaReady && !/\{\{(?!\d+\}\})/.test(content!);
     })
     .map((template) => {
       const preview = template.versions[0]!.content;
@@ -92,6 +96,7 @@ export async function getAvailableFollowupTemplates(db: PrismaClient) {
         ? template.versions[0]!.exampleValues.map(String)
         : [];
       return {
+        id: template.id,
         name: template.name,
         language: template.language,
         label: template.label || template.name,
@@ -101,6 +106,8 @@ export async function getAvailableFollowupTemplates(db: PrismaClient) {
         requiresUrl: parameterCount > 0 && /\b(link|url|acesse|acessar)\b/i.test(preview),
         category: template.metaCategory || template.requestedCategory || template.category,
         status: 'approved' as const,
+        headerFormat: template.versions[0]!.headerFormat || 'NONE',
+        hasHeaderImage: Boolean(template.versions[0]!.headerData),
       };
     });
 
@@ -114,11 +121,14 @@ export async function getAvailableFollowupTemplates(db: PrismaClient) {
   for (const legacy of FOLLOWUP_TEMPLATES) {
     if (known.has(legacy.name) || !approvedNames.has(legacy.name)) continue;
     result.push({
+      id: legacy.name,
       ...legacy,
       parameterCount: extractParameterCount(legacy.preview),
       examples: legacy.requiresUrl ? ['https://sua-oferta.com'] : [],
       category: 'MARKETING',
       status: 'approved' as const,
+      headerFormat: 'NONE',
+      hasHeaderImage: false,
     });
   }
   return result;
@@ -326,7 +336,12 @@ export async function prepareFollowupCampaign(db: PrismaClient, campaignId: stri
 
   if (contacts.length > 0) {
     await db.followupCampaignMessage.createMany({
-      data: contacts.map((contact) => ({ campaignId, contactId: contact.id, status: 'queued' })),
+      data: contacts.map((contact) => ({
+        campaignId,
+        contactId: contact.id,
+        status: 'queued',
+        ...(campaign.offerUrl ? { trackingCode: createTrackingCode() } : {}),
+      })),
       skipDuplicates: true,
     });
   }
@@ -347,7 +362,7 @@ export async function prepareFollowupCampaign(db: PrismaClient, campaignId: stri
 }
 
 export async function processFollowupBatch(db: PrismaClient, campaignId: string, batchSize = 10) {
-  const campaign = await db.followupCampaign.findUnique({ where: { id: campaignId } });
+  let campaign = await db.followupCampaign.findUnique({ where: { id: campaignId } });
   if (!campaign) throw new Error('Campanha não encontrada');
   if (campaign.status !== 'running') {
     return { campaignId, processed: 0, remaining: 0, status: campaign.status };
@@ -355,6 +370,7 @@ export async function processFollowupBatch(db: PrismaClient, campaignId: string,
   if (process.env.WHATSAPP_OUTBOUND_ENABLED !== 'true') {
     throw new Error('Envio do WhatsApp está desativado');
   }
+  campaign = await ensureCampaignHeaderMedia(db, campaign);
 
   const now = new Date();
   const effectiveBatchSize = Math.max(1, Math.min(campaign.batchSize || batchSize, 25));
@@ -402,11 +418,22 @@ export async function processFollowupBatch(db: PrismaClient, campaignId: string,
     }
 
     try {
+      let trackingCode = message.trackingCode;
+      if (campaign.offerUrl && !trackingCode) {
+        trackingCode = createTrackingCode();
+        await db.followupCampaignMessage.update({
+          where: { id: message.id },
+          data: { trackingCode },
+        });
+      }
+      const parameters = readTemplateParameters(campaign.templateParameters, campaign.offerUrl);
+      if (trackingCode && parameters.length > 0) parameters[0] = trackingPublicUrl(trackingCode);
       const metaMessageId = await sendTemplateMessage({
         to: phone,
         templateName: campaign.templateName,
         language: campaign.templateLanguage,
-        parameters: readTemplateParameters(campaign.templateParameters, campaign.offerUrl),
+        parameters,
+        headerMediaId: campaign.headerMediaId,
       });
       await db.followupCampaignMessage.update({
         where: { id: message.id },
@@ -652,6 +679,7 @@ async function sendTemplateMessage(input: {
   templateName: string;
   language: string;
   parameters: string[];
+  headerMediaId?: string | null;
 }): Promise<string> {
   const provider = (process.env.WHATSAPP_PRIVATE_PROVIDER ?? 'mock').toLowerCase();
   if (provider === 'mock') return `mock-${crypto.randomUUID()}`;
@@ -666,10 +694,19 @@ async function sendTemplateMessage(input: {
   const safetyEnvironment = process.env.DEPLOYMENT_ENV ?? 'development';
   const recipient = assertStagingRecipientAllowed(input.to, safetyEnvironment, stagingAllowlist);
 
-  const components =
-    input.parameters.length > 0
-      ? [{ type: 'body', parameters: input.parameters.map((text) => ({ type: 'text', text })) }]
-      : undefined;
+  const components: Array<Record<string, unknown>> = [];
+  if (input.headerMediaId) {
+    components.push({
+      type: 'header',
+      parameters: [{ type: 'image', image: { id: input.headerMediaId } }],
+    });
+  }
+  if (input.parameters.length > 0) {
+    components.push({
+      type: 'body',
+      parameters: input.parameters.map((text) => ({ type: 'text', text })),
+    });
+  }
   const response = await fetch(
     `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`,
     {
@@ -683,7 +720,7 @@ async function sendTemplateMessage(input: {
         template: {
           name: input.templateName,
           language: { code: input.language },
-          ...(components ? { components } : {}),
+          ...(components.length > 0 ? { components } : {}),
         },
       }),
     },
@@ -750,4 +787,94 @@ function extractParameterCount(content: string): number {
 function readTemplateParameters(value: unknown, offerUrl?: string | null): string[] {
   if (Array.isArray(value)) return value.map((item) => String(item));
   return offerUrl ? [offerUrl] : [];
+}
+
+function createTrackingCode(): string {
+  return randomBytes(12).toString('base64url');
+}
+
+function trackingPublicUrl(code: string): string {
+  const base =
+    process.env.TRACKING_BASE_URL?.trim() ||
+    process.env.CRM_PUBLIC_URL?.trim() ||
+    'http://localhost:5173';
+  return `${base.replace(/\/$/, '')}/api/t/${code}`;
+}
+
+async function ensureCampaignHeaderMedia<
+  T extends {
+    id: string;
+    templateName: string;
+    templateLanguage: string;
+    headerMediaId: string | null;
+  },
+>(
+  db: PrismaClient,
+  campaign: T,
+): Promise<T> {
+  if (campaign.headerMediaId) return campaign;
+  const template = await db.messageTemplate.findFirst({
+    where: {
+      name: campaign.templateName,
+      language: campaign.templateLanguage,
+      isActive: true,
+    },
+    include: { versions: { where: { isCurrent: true }, take: 1 } },
+  });
+  const version = template?.versions[0];
+  if (version?.headerFormat !== 'IMAGE') return campaign;
+  if (!version.headerData || !version.headerMimeType || !version.headerFileName) {
+    throw new Error('O template usa imagem, mas o arquivo não está disponível no CRM');
+  }
+  const storedData = new Uint8Array(version.headerData.length);
+  storedData.set(version.headerData);
+  const headerMediaId = await uploadWhatsAppImage({
+    data: storedData,
+    mimeType: version.headerMimeType as 'image/jpeg' | 'image/png',
+    fileName: version.headerFileName,
+  });
+  await db.followupCampaign.update({
+    where: { id: campaign.id },
+    data: { headerMediaId },
+  });
+  return { ...campaign, headerMediaId };
+}
+
+export async function recordFollowupClick(
+  db: PrismaClient,
+  code: string,
+  visitor: { ipAddress: string; userAgent: string; referer: string },
+): Promise<string | null> {
+  return db.$transaction(async (tx) => {
+    const message = await tx.followupCampaignMessage.findUnique({
+      where: { trackingCode: code },
+      include: { campaign: { select: { id: true, offerUrl: true } } },
+    });
+    if (!message?.campaign.offerUrl) return null;
+    const firstClick = await tx.followupCampaignMessage.updateMany({
+      where: { id: message.id, clickedAt: null },
+      data: { clickedAt: new Date() },
+    });
+    await tx.followupCampaignMessage.update({
+      where: { id: message.id },
+      data: { clickCount: { increment: 1 } },
+    });
+    await tx.followupCampaign.update({
+      where: { id: message.campaign.id },
+      data: {
+        clickCount: { increment: 1 },
+        ...(firstClick.count === 1 ? { uniqueClickCount: { increment: 1 } } : {}),
+      },
+    });
+    await tx.trackingClick.create({
+      data: {
+        contactId: message.contactId,
+        url: message.campaign.offerUrl,
+        ipAddress: visitor.ipAddress,
+        userAgent: visitor.userAgent,
+        referer: visitor.referer,
+      },
+    });
+    return message.campaign.offerUrl;
+  });
 }

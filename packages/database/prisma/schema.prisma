@@ -185,6 +185,9 @@ model FollowupCampaign {
   failedCount          Int       @default(0) @map("failed_count")
   repliedCount         Int       @default(0) @map("replied_count")
   optOutCount          Int       @default(0) @map("opt_out_count")
+  clickCount           Int       @default(0) @map("click_count")
+  uniqueClickCount     Int       @default(0) @map("unique_click_count")
+  headerMediaId        String?   @map("header_media_id")
   createdBy            String    @map("created_by")
   createdAt            DateTime  @default(now()) @map("created_at")
   startedAt            DateTime? @map("started_at")
@@ -248,6 +251,9 @@ model FollowupCampaignMessage {
   readAt        DateTime? @map("read_at")
   failedAt      DateTime? @map("failed_at")
   repliedAt     DateTime? @map("replied_at")
+  trackingCode  String?   @unique @map("tracking_code")
+  clickCount    Int       @default(0) @map("click_count")
+  clickedAt     DateTime? @map("clicked_at")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
@@ -257,6 +263,7 @@ model FollowupCampaignMessage {
   @@unique([campaignId, contactId])
   @@index([campaignId, status, nextAttemptAt])
   @@index([contactId, createdAt])
+  @@index([campaignId, clickedAt])
   @@map("followup_campaign_messages")
 }
 
@@ -506,16 +513,20 @@ model MessageTemplate {
 }
 
 model MessageTemplateVersion {
-  id            String   @id @default(uuid())
-  templateId    String   @map("template_id")
-  version       Int
-  content       String
-  footer        String   @default("")
-  variables     Json?
-  components    Json?
-  exampleValues Json?    @map("example_values")
-  isCurrent     Boolean  @default(false) @map("is_current")
-  createdAt     DateTime @default(now()) @map("created_at")
+  id             String   @id @default(uuid())
+  templateId     String   @map("template_id")
+  version        Int
+  content        String
+  footer         String   @default("")
+  variables      Json?
+  components     Json?
+  exampleValues  Json?    @map("example_values")
+  headerFormat   String   @default("") @map("header_format")
+  headerMimeType String?  @map("header_mime_type")
+  headerFileName String?  @map("header_file_name")
+  headerData     Bytes?   @map("header_data")
+  isCurrent      Boolean  @default(false) @map("is_current")
+  createdAt      DateTime @default(now()) @map("created_at")
 
   template MessageTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
@@ -787,24 +798,24 @@ model AiConfig {
 // ─── Import ──────────────────────────────────────────────────────────
 
 model Import {
-  id               String    @id @default(uuid())
-  type             String
-  status           String    @default("pending")
-  filename         String
-  audienceName     String?   @map("audience_name")
-  editionName      String?   @map("edition_name")
-  landingPageUrl   String?   @map("landing_page_url")
-  consentSource    String?   @map("consent_source")
-  consentText      String?   @map("consent_text")
-  consentVersion   String?   @map("consent_version")
-  consentAt        DateTime? @map("consent_at")
-  totalRows        Int       @default(0) @map("total_rows")
-  processedRows    Int       @default(0) @map("processed_rows")
-  errorRows        Int       @default(0) @map("error_rows")
-  createdBy        String    @map("created_by")
-  startedAt        DateTime? @map("started_at")
-  completedAt      DateTime? @map("completed_at")
-  createdAt        DateTime  @default(now()) @map("created_at")
+  id             String    @id @default(uuid())
+  type           String
+  status         String    @default("pending")
+  filename       String
+  audienceName   String?   @map("audience_name")
+  editionName    String?   @map("edition_name")
+  landingPageUrl String?   @map("landing_page_url")
+  consentSource  String?   @map("consent_source")
+  consentText    String?   @map("consent_text")
+  consentVersion String?   @map("consent_version")
+  consentAt      DateTime? @map("consent_at")
+  totalRows      Int       @default(0) @map("total_rows")
+  processedRows  Int       @default(0) @map("processed_rows")
+  errorRows      Int       @default(0) @map("error_rows")
+  createdBy      String    @map("created_by")
+  startedAt      DateTime? @map("started_at")
+  completedAt    DateTime? @map("completed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
 
   creator  AdminUser    @relation(fields: [createdBy], references: [id])
   rows     ImportRow[]

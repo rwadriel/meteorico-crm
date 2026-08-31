@@ -47,12 +47,14 @@ services:
       META_WHATSAPP_VERIFY_TOKEN: ${META_WHATSAPP_VERIFY_TOKEN:-}
       META_WHATSAPP_REGISTRATION_PIN: ${META_WHATSAPP_REGISTRATION_PIN:-}
       META_APP_SECRET: ${META_APP_SECRET:-}
+      META_APP_ID: ${META_APP_ID:-2332788004133267}
       META_GRAPH_API_VERSION: ${META_GRAPH_API_VERSION:-v25.0}
       META_APPROVED_TEMPLATE_NAMES: ${META_APPROVED_TEMPLATE_NAMES:-}
       N8N_INTERNAL_TOKEN: ${N8N_INTERNAL_TOKEN}
       N8N_CAMPAIGN_WEBHOOK_URL: http://n8n:5678/webhook/meteorico-campaign
       N8N_STATUS_WEBHOOK_URL: http://n8n:5678/webhook/meteorico-status
       N8N_INBOUND_WEBHOOK_URL: http://n8n:5678/webhook/meteorico-inbound
+      TRACKING_BASE_URL: ${TRACKING_BASE_URL:-https://meteorico.musicalucrativa.com.br}
       TZ: America/Belem
     expose:
       - "4080"

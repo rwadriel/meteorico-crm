@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getClient } from '@meteorico/database';
 import { z } from 'zod';
 import { requireAuth, requirePermission } from '../middleware/auth.js';
@@ -31,6 +31,7 @@ const metaTemplateSchema = z.object({
   footer: z.string().trim().max(60).optional(),
   exampleValues: z.array(z.string().trim().min(1).max(1024)).max(10).optional(),
   allowCategoryChange: z.boolean().default(true),
+  headerFormat: z.enum(['NONE', 'IMAGE']).default('NONE'),
 });
 
 const classifySchema = z.object({ body: z.string().trim().min(1).max(1024) });
@@ -124,8 +125,8 @@ export async function templateRoutes(app: FastifyInstance) {
       preHandler: requirePermission('messages', 'create'),
     },
     async (request, reply) => {
-      const input = metaTemplateSchema.parse(request.body);
       try {
+        const input = await readMetaTemplateInput(request);
         const template = await createAndSubmitMetaTemplate(getClient(), request.user!.id, input);
         await writeAuditLog(getClient(), {
           userId: request.user!.id,
@@ -144,6 +145,27 @@ export async function templateRoutes(app: FastifyInstance) {
       } catch (error) {
         return sendMetaTemplateError(reply, error);
       }
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/templates/meta/:id/header',
+    {
+      preHandler: requirePermission('messages', 'read'),
+    },
+    async (request, reply) => {
+      const template = await getClient().messageTemplate.findUnique({
+        where: { id: request.params.id, isActive: true },
+        include: { versions: { where: { isCurrent: true }, take: 1 } },
+      });
+      const current = template?.versions[0];
+      if (!current?.headerData || !current.headerMimeType) {
+        return reply.status(404).send({ message: 'Imagem do template não encontrada' });
+      }
+      return reply
+        .type(current.headerMimeType)
+        .header('Cache-Control', 'private, max-age=3600')
+        .send(Buffer.from(current.headerData));
     },
   );
 
@@ -286,7 +308,63 @@ function serializeManagedTemplate(
     footer: current?.footer ?? '',
     variableCount: Array.isArray(current?.variables) ? current.variables.length : 0,
     exampleValues: Array.isArray(current?.exampleValues) ? current.exampleValues : [],
+    headerFormat: current?.headerFormat || 'NONE',
+    hasHeaderImage: Boolean(current?.headerData),
   };
+}
+
+async function readMetaTemplateInput(request: FastifyRequest) {
+  if (!request.isMultipart()) return metaTemplateSchema.parse(request.body);
+
+  const fields: Record<string, unknown> = {};
+  let headerImage:
+    | { data: Uint8Array<ArrayBuffer>; mimeType: 'image/jpeg' | 'image/png'; fileName: string }
+    | undefined;
+  for await (const part of request.parts()) {
+    if (part.type === 'file') {
+      if (part.fieldname !== 'headerImage') {
+        part.file.resume();
+        continue;
+      }
+      if (!['image/jpeg', 'image/png'].includes(part.mimetype)) {
+        part.file.resume();
+        throw new MetaTemplateError('A imagem deve estar em JPG ou PNG.');
+      }
+      const data = await part.toBuffer();
+      if (data.length > 5 * 1024 * 1024) {
+        throw new MetaTemplateError('A imagem deve ter no máximo 5 MB.');
+      }
+      const storedData = new Uint8Array(data.length);
+      storedData.set(data);
+      headerImage = {
+        data: storedData,
+        mimeType: part.mimetype as 'image/jpeg' | 'image/png',
+        fileName: part.filename || 'template-header.jpg',
+      };
+      continue;
+    }
+    fields[part.fieldname] = part.value;
+  }
+
+  let exampleValues: unknown[] = [];
+  if (fields.exampleValues) {
+    try {
+      const value = JSON.parse(String(fields.exampleValues));
+      if (!Array.isArray(value)) throw new Error('invalid');
+      exampleValues = value;
+    } catch {
+      throw new MetaTemplateError('Os exemplos das variáveis estão inválidos.');
+    }
+  }
+  const parsed = metaTemplateSchema.parse({
+    ...fields,
+    allowCategoryChange: fields.allowCategoryChange !== 'false',
+    exampleValues,
+  });
+  if (parsed.headerFormat === 'IMAGE' && !headerImage) {
+    throw new MetaTemplateError('Selecione uma imagem JPG ou PNG para o cabeçalho.');
+  }
+  return { ...parsed, headerImage };
 }
 
 function sendMetaTemplateError(reply: FastifyReply, error: unknown) {

@@ -1,5 +1,9 @@
 import type { PrismaClient } from '@meteorico/database';
 import { Prisma } from '@meteorico/database';
+import { uploadTemplateHeaderSample, type TemplateHeaderImage } from './meta-media.js';
+import { MetaTemplateError } from './meta-template-error.js';
+
+export { MetaTemplateError } from './meta-template-error.js';
 
 export type MetaTemplateCategory = 'MARKETING' | 'UTILITY';
 export type TemplateCategorySuggestion = MetaTemplateCategory | 'AUTHENTICATION';
@@ -13,6 +17,9 @@ export interface MetaTemplateInput {
   footer?: string;
   exampleValues?: string[];
   allowCategoryChange?: boolean;
+  headerFormat?: 'NONE' | 'IMAGE';
+  headerImage?: TemplateHeaderImage;
+  headerHandle?: string;
 }
 
 interface MetaTemplateRecord {
@@ -38,16 +45,6 @@ interface MetaErrorRecord {
   error_subcode?: number;
   error_user_title?: string;
   error_user_msg?: string;
-}
-
-export class MetaTemplateError extends Error {
-  constructor(
-    message: string,
-    readonly httpStatus = 400,
-    readonly metaCode?: number,
-  ) {
-    super(message);
-  }
 }
 
 const TECHNICAL_NAME = /^[a-z][a-z0-9_]{2,119}$/;
@@ -154,12 +151,16 @@ export function validateMetaTemplateInput(input: MetaTemplateInput): {
   exampleValues: string[];
   allowCategoryChange: boolean;
   variableCount: number;
+  headerFormat: 'NONE' | 'IMAGE';
+  headerImage?: TemplateHeaderImage;
+  headerHandle?: string;
 } {
   const name = input.name.trim().toLowerCase();
   const body = input.body.trim();
   const footer = input.footer?.trim() ?? '';
   const language = input.language?.trim() || 'pt_BR';
   const exampleValues = input.exampleValues?.map((value) => value.trim()) ?? [];
+  const headerFormat = input.headerFormat ?? (input.headerImage ? 'IMAGE' : 'NONE');
 
   if (!TECHNICAL_NAME.test(name)) {
     throw new MetaTemplateError(
@@ -197,6 +198,9 @@ export function validateMetaTemplateInput(input: MetaTemplateInput): {
       'Cada valor de exemplo deve estar preenchido e ter até 1024 caracteres.',
     );
   }
+  if (headerFormat === 'IMAGE' && !input.headerImage && !input.headerHandle) {
+    throw new MetaTemplateError('Selecione uma imagem JPG ou PNG para o cabeçalho.');
+  }
 
   return {
     name,
@@ -208,6 +212,9 @@ export function validateMetaTemplateInput(input: MetaTemplateInput): {
     exampleValues,
     allowCategoryChange: input.allowCategoryChange !== false,
     variableCount: indexes.length,
+    headerFormat,
+    headerImage: input.headerImage,
+    headerHandle: input.headerHandle,
   };
 }
 
@@ -218,6 +225,13 @@ export function buildMetaTemplatePayload(input: MetaTemplateInput): Record<strin
     body.example = { body_text: [value.exampleValues] };
   }
   const components: Record<string, unknown>[] = [body];
+  if (value.headerFormat === 'IMAGE' && value.headerHandle) {
+    components.unshift({
+      type: 'HEADER',
+      format: 'IMAGE',
+      example: { header_handle: [value.headerHandle] },
+    });
+  }
   if (value.footer) components.push({ type: 'FOOTER', text: value.footer });
 
   return {
@@ -234,7 +248,7 @@ export async function createAndSubmitMetaTemplate(
   createdBy: string,
   input: MetaTemplateInput,
 ) {
-  const value = validateMetaTemplateInput(input);
+  let value = validateMetaTemplateInput(input);
   const existing = await db.messageTemplate.findFirst({
     where: { name: value.name, language: value.language, isActive: true },
   });
@@ -245,9 +259,16 @@ export async function createAndSubmitMetaTemplate(
     );
   }
 
+  if (value.headerFormat === 'IMAGE' && value.headerImage && !value.headerHandle) {
+    const headerHandle = await uploadTemplateHeaderSample(value.headerImage);
+    input = { ...input, headerHandle };
+    value = validateMetaTemplateInput(input);
+  }
+
+  const payload = buildMetaTemplatePayload(input);
   const response = await metaRequest<MetaTemplateRecord>('/message_templates', {
     method: 'POST',
-    body: JSON.stringify(buildMetaTemplatePayload(input)),
+    body: JSON.stringify(payload),
   });
   if (!response.id)
     throw new MetaTemplateError('A Meta não retornou o identificador do template.', 502);
@@ -284,7 +305,7 @@ export async function createAndSubmitMetaTemplate(
           create: versionCreateData(
             value,
             (latest?.version ?? 0) + 1,
-            buildMetaTemplatePayload(input).components,
+            payload.components,
           ),
         },
       },
@@ -296,7 +317,7 @@ export async function createAndSubmitMetaTemplate(
     data: {
       ...templateData,
       createdBy,
-      versions: { create: versionCreateData(value, 1, buildMetaTemplatePayload(input).components) },
+      versions: { create: versionCreateData(value, 1, payload.components) },
     },
     include: { versions: { where: { isCurrent: true }, take: 1 } },
   });
@@ -317,6 +338,7 @@ export async function syncMetaTemplates(db: PrismaClient, createdBy: string) {
     const body = componentText(components, 'BODY');
     const footer = componentText(components, 'FOOTER');
     const examples = componentExamples(components);
+    const headerFormat = componentFormat(components, 'HEADER');
     const existing = await db.messageTemplate.findFirst({
       where: {
         OR: [{ metaTemplateId: record.id }, { name: record.name, language: record.language }],
@@ -352,6 +374,7 @@ export async function syncMetaTemplates(db: PrismaClient, createdBy: string) {
               variables: extractPositionalVariables(body) as unknown as Prisma.InputJsonValue,
               components: components as Prisma.InputJsonValue,
               exampleValues: examples as unknown as Prisma.InputJsonValue,
+              headerFormat,
               isCurrent: true,
             },
           },
@@ -381,6 +404,10 @@ export async function syncMetaTemplates(db: PrismaClient, createdBy: string) {
           variables: extractPositionalVariables(body) as unknown as Prisma.InputJsonValue,
           components: components as Prisma.InputJsonValue,
           exampleValues: examples as unknown as Prisma.InputJsonValue,
+          headerFormat,
+          headerMimeType: current?.headerMimeType ?? null,
+          headerFileName: current?.headerFileName ?? null,
+          headerData: current?.headerData ?? null,
           isCurrent: true,
         },
       });
@@ -390,6 +417,7 @@ export async function syncMetaTemplates(db: PrismaClient, createdBy: string) {
         data: {
           components: components as Prisma.InputJsonValue,
           exampleValues: examples as unknown as Prisma.InputJsonValue,
+          headerFormat,
         },
       });
     }
@@ -502,6 +530,10 @@ function versionCreateData(
     variables: extractPositionalVariables(value.body) as unknown as Prisma.InputJsonValue,
     components: components as Prisma.InputJsonValue,
     exampleValues: value.exampleValues as unknown as Prisma.InputJsonValue,
+    headerFormat: value.headerFormat,
+    headerMimeType: value.headerImage?.mimeType ?? null,
+    headerFileName: value.headerImage?.fileName ?? null,
+    headerData: value.headerImage?.data ?? null,
     isCurrent: true,
   };
 }
@@ -570,6 +602,16 @@ function componentText(components: unknown[], type: string): string {
     const record = asRecord(component);
     if (String(record?.type).toUpperCase() === type && typeof record?.text === 'string')
       return record.text;
+  }
+  return '';
+}
+
+function componentFormat(components: unknown[], type: string): string {
+  for (const component of components) {
+    const record = asRecord(component);
+    if (String(record?.type).toUpperCase() === type) {
+      return typeof record?.format === 'string' ? record.format.toUpperCase() : '';
+    }
   }
   return '';
 }

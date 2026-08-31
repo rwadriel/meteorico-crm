@@ -45,6 +45,27 @@ describe('Meta template management', () => {
     });
   });
 
+  it('builds an image header with the Meta upload handle', () => {
+    const payload = buildMetaTemplatePayload({
+      name: 'oferta_com_imagem',
+      category: 'MARKETING',
+      body: 'A oferta está disponível em {{1}}.',
+      exampleValues: ['https://example.com/oferta'],
+      headerFormat: 'IMAGE',
+      headerHandle: '4::meta-upload-handle',
+    });
+    expect(payload).toMatchObject({
+      components: [
+        {
+          type: 'HEADER',
+          format: 'IMAGE',
+          example: { header_handle: ['4::meta-upload-handle'] },
+        },
+        { type: 'BODY' },
+      ],
+    });
+  });
+
   it('rejects skipped variables and missing examples before calling Meta', () => {
     expect(() =>
       validateMetaTemplateInput({

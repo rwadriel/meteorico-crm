@@ -4,6 +4,7 @@ import { Alert, Badge, Button, ConfirmDialog, Input, Modal, Table } from '../com
 const API = import.meta.env.VITE_API_URL ?? '';
 
 interface Template {
+  id?: string;
   name: string;
   label: string;
   language: string;
@@ -12,6 +13,8 @@ interface Template {
   parameterCount: number;
   examples: string[];
   category: string;
+  headerFormat: string;
+  hasHeaderImage: boolean;
 }
 
 interface Audience {
@@ -46,6 +49,8 @@ interface FollowupCampaign {
   failedCount: number;
   repliedCount: number;
   optOutCount: number;
+  clickCount: number;
+  uniqueClickCount: number;
   createdAt: string;
   scheduledAt: string | null;
   batchSize: number;
@@ -285,6 +290,20 @@ export function FollowupCampaignsPage() {
     { key: 'submittedCount', header: 'Submetidas' },
     { key: 'deliveredCount', header: 'Entregues' },
     { key: 'readCount', header: 'Lidas' },
+    {
+      key: 'uniqueClickCount',
+      header: 'Cliques',
+      render: (campaign: FollowupCampaign) =>
+        `${campaign.uniqueClickCount} únicos · ${campaign.clickCount} totais`,
+    },
+    {
+      key: 'clickRate',
+      header: 'CTR',
+      render: (campaign: FollowupCampaign) =>
+        campaign.deliveredCount > 0
+          ? `${((campaign.uniqueClickCount / campaign.deliveredCount) * 100).toFixed(1)}%`
+          : '0%',
+    },
     { key: 'repliedCount', header: 'Respostas' },
     { key: 'optOutCount', header: 'Opt-outs' },
     {
@@ -496,6 +515,13 @@ export function FollowupCampaignsPage() {
           <p className="text-sm text-secondary" style={{ marginBottom: '0.6rem' }}>
             PRÉVIA
           </p>
+          {selectedTemplate?.hasHeaderImage && selectedTemplate.id && (
+            <img
+              src={`${API}/api/templates/meta/${selectedTemplate.id}/header`}
+              alt="Imagem do cabeçalho do template"
+              style={{ width: '100%', maxHeight: '220px', objectFit: 'cover', borderRadius: '12px', marginBottom: '0.8rem' }}
+            />
+          )}
           {renderedPreview}
         </div>
         {preflight && (

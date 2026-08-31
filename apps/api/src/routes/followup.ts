@@ -332,7 +332,7 @@ export async function followupRoutes(app: FastifyInstance) {
       },
     });
     const rows = [
-      'telefone,status,enviado_em,entregue_em,lido_em,respondeu,opt_out,opt_out_em,erro',
+      'telefone,status,enviado_em,entregue_em,lido_em,respondeu,cliques,primeiro_clique_em,opt_out,opt_out_em,erro',
     ];
     for (const message of messages) {
       rows.push(
@@ -343,6 +343,8 @@ export async function followupRoutes(app: FastifyInstance) {
           csvCell(message.deliveredAt?.toISOString() ?? ''),
           csvCell(message.readAt?.toISOString() ?? ''),
           message.repliedAt ? 'sim' : 'nao',
+          String(message.clickCount),
+          csvCell(message.clickedAt?.toISOString() ?? ''),
           message.contact.preferences[0]?.optedOut ? 'sim' : 'nao',
           csvCell(message.contact.optOutAt?.toISOString() ?? ''),
           csvCell(message.errorCode ?? ''),

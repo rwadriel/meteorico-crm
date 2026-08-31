@@ -40,4 +40,33 @@ describe('follow-up audiences', () => {
       skipDuplicates: true,
     }));
   });
+
+  it('creates a unique tracking code for each contact when the campaign has a link', async () => {
+    const createMany = vi.fn().mockResolvedValue({ count: 2 });
+    const db = {
+      followupCampaign: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: 'campaign-2',
+          status: 'draft',
+          audienceListId: 'list-2',
+          offerUrl: 'https://example.com/oferta',
+        }),
+        update: vi.fn().mockImplementation(({ data }) => Promise.resolve(data)),
+      },
+      contact: {
+        count: vi.fn().mockResolvedValue(2),
+        findMany: vi.fn().mockResolvedValue([{ id: 'contact-1' }, { id: 'contact-2' }]),
+      },
+      followupCampaignMessage: {
+        createMany,
+        count: vi.fn().mockResolvedValue(2),
+      },
+    };
+
+    await prepareFollowupCampaign(db as never, 'campaign-2');
+
+    const rows = createMany.mock.calls[0][0].data as Array<{ trackingCode: string }>;
+    expect(rows[0].trackingCode).toMatch(/^[A-Za-z0-9_-]{16}$/);
+    expect(rows[1].trackingCode).not.toBe(rows[0].trackingCode);
+  });
 });
