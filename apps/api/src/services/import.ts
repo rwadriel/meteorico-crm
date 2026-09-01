@@ -70,6 +70,8 @@ const CONTACT_HEADER_MAP: Record<string, string> = {
   numero: 'telefone',
   number: 'telefone',
   nome: 'nome',
+  'nome completo': 'nome',
+  nome_completo: 'nome',
   name: 'nome',
   email: 'email',
   quantidade_participacoes: 'quantidade_participacoes',
@@ -185,10 +187,16 @@ function isValidEmail(email: string): boolean {
 }
 
 export function normalizePhone(raw: string): string | null {
+  const hasExplicitCountryCode = raw.trim().startsWith('+');
   const stripped = raw.replace(/\D/g, '');
   let digits = stripped;
 
-  if (digits.length >= 10 && digits.length <= 11 && !digits.startsWith('55')) {
+  if (
+    !hasExplicitCountryCode &&
+    digits.length >= 10 &&
+    digits.length <= 11 &&
+    !digits.startsWith('55')
+  ) {
     digits = '55' + digits;
   }
 
@@ -249,6 +257,40 @@ function getField(fields: string[], columnMap: Map<string, number>, key: string)
   return sanitizeString(fields[idx] ?? '');
 }
 
+function getPhoneField(fields: string[], columnMap: Map<string, number>): string {
+  const idx = columnMap.get('telefone');
+  if (idx === undefined) return '';
+  return (fields[idx] ?? '').trim();
+}
+
+function findHeader(
+  lines: string[],
+  headerMap: Record<string, string>,
+  requiredHeaders: string[],
+): {
+  headerIndex: number;
+  delimiter: string;
+  columnMap: Map<string, number>;
+  errors: string[];
+} {
+  const candidates = lines.slice(0, 10);
+
+  for (let index = 0; index < candidates.length; index++) {
+    const delimiter = detectDelimiter(candidates[index]);
+    const headerFields = parseCsvLine(candidates[index], delimiter);
+    const mapped = mapHeaders(headerFields, headerMap, requiredHeaders);
+    const hasRequiredHeaders = requiredHeaders.every((header) => mapped.columnMap.has(header));
+
+    if (hasRequiredHeaders) {
+      return { headerIndex: index, delimiter, ...mapped };
+    }
+  }
+
+  const delimiter = detectDelimiter(lines[0]);
+  const mapped = mapHeaders(parseCsvLine(lines[0], delimiter), headerMap, requiredHeaders);
+  return { headerIndex: 0, delimiter, ...mapped };
+}
+
 // ─── CSV Parsers ─────────────────────────────────────────────────────
 
 export function parseContactsCsv(content: string): {
@@ -264,23 +306,22 @@ export function parseContactsCsv(content: string): {
     return { rows, errors };
   }
 
-  const delimiter = detectDelimiter(lines[0]);
-  const headerFields = parseCsvLine(lines[0], delimiter);
-  const { columnMap, errors: headerErrors } = mapHeaders(
-    headerFields,
-    CONTACT_HEADER_MAP,
-    CONTACT_REQUIRED_HEADERS,
-  );
+  const {
+    headerIndex,
+    delimiter,
+    columnMap,
+    errors: headerErrors,
+  } = findHeader(lines, CONTACT_HEADER_MAP, CONTACT_REQUIRED_HEADERS);
 
   if (headerErrors.length > 0) {
     return { rows, errors, headerErrors };
   }
 
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = headerIndex + 1; i < lines.length; i++) {
     const fields = parseCsvLine(lines[i], delimiter);
     const rowNum = i + 1;
 
-    const rawPhone = getField(fields, columnMap, 'telefone');
+    const rawPhone = getPhoneField(fields, columnMap);
     if (!rawPhone) {
       errors.push({ row: rowNum, field: 'telefone', message: 'Phone is required' });
       continue;
@@ -374,23 +415,22 @@ export function parseParticipationsCsv(content: string): {
     return { rows, errors };
   }
 
-  const delimiter = detectDelimiter(lines[0]);
-  const headerFields = parseCsvLine(lines[0], delimiter);
-  const { columnMap, errors: headerErrors } = mapHeaders(
-    headerFields,
-    PARTICIPATION_HEADER_MAP,
-    PARTICIPATION_REQUIRED_HEADERS,
-  );
+  const {
+    headerIndex,
+    delimiter,
+    columnMap,
+    errors: headerErrors,
+  } = findHeader(lines, PARTICIPATION_HEADER_MAP, PARTICIPATION_REQUIRED_HEADERS);
 
   if (headerErrors.length > 0) {
     return { rows, errors, headerErrors };
   }
 
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = headerIndex + 1; i < lines.length; i++) {
     const fields = parseCsvLine(lines[i], delimiter);
     const rowNum = i + 1;
 
-    const rawPhone = getField(fields, columnMap, 'telefone');
+    const rawPhone = getPhoneField(fields, columnMap);
     if (!rawPhone) {
       errors.push({ row: rowNum, field: 'telefone', message: 'Phone is required' });
       continue;
@@ -469,6 +509,14 @@ export async function createImportPreview(
   }
 
   if (headerErrors && headerErrors.length > 0) {
+    if (type === 'participations') {
+      const contactsResult = parseContactsCsv(content);
+      if (!contactsResult.headerErrors && contactsResult.rows.length > 0) {
+        throw new Error(
+          'Este arquivo contém uma lista de contatos. Selecione "Contatos (carga inicial)" em Tipo de importação.',
+        );
+      }
+    }
     throw new Error(`Invalid CSV headers: ${headerErrors.join('; ')}`);
   }
 

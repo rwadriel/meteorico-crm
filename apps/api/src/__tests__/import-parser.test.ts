@@ -26,6 +26,11 @@ describe('normalizePhone', () => {
     expect(normalizePhone('+5511999990000')).toBe('5511999990000');
   });
 
+  it('preserves explicit international country codes with short numbers', () => {
+    expect(normalizePhone('+1 772 555 0199')).toBe('17725550199');
+    expect(normalizePhone('+34 612 345 678')).toBe('34612345678');
+  });
+
   it('strips non-digits', () => {
     expect(normalizePhone('(11) 99999-0000')).toBe('5511999990000');
   });
@@ -83,6 +88,24 @@ describe('parseContactsCsv – header-based', () => {
     expect(rows[0].email).toBe('carlos@test.dev');
     expect(rows[0].isStudent).toBe(false);
     expect(rows[0].totalParticipations).toBe(2);
+  });
+
+  it('accepts exporter instructions before Nome completo and Telefone headers', () => {
+    const csv = [
+      'Insira o nome completo e o telefone de cada destinatário em uma linha separada.',
+      '',
+      'Nome completo,Telefone',
+      'Contato Internacional,+1 772 555 0199',
+    ].join('\n');
+
+    const { rows, errors, headerErrors } = parseContactsCsv(csv);
+    expect(headerErrors).toBeUndefined();
+    expect(errors).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      name: 'Contato Internacional',
+      phone: '17725550199',
+    });
   });
 
   // ─── Test 3: Required column missing ─────────────────────────────
