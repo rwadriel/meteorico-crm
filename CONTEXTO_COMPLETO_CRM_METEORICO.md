@@ -274,6 +274,13 @@ A v0.11.0 inclui um construtor visual de botões na criação do template:
 - reconhecimento de respostas rápidas recebidas pelo webhook;
 - “SAIR” registra opt-out global automaticamente e bloqueia envios futuros, inclusive após nova importação do número.
 
+O botão tem duas configurações deliberadamente separadas:
+
+- no **template**, define-se o tipo e o texto visível do botão, que fazem parte do modelo aprovado pela Meta;
+- na **campanha**, informa-se a página final que será aberta, permitindo reutilizar o mesmo template em campanhas com destinos diferentes.
+
+A partir da v0.11.1, novos templates usam `https://musicalucrativa.com.br/r/<codigo>` como endereço visível. O plugin WordPress `Meteórico Link Tracker` encaminha esse código ao coletor do CRM, registra o clique e abre a página final da campanha. O subdomínio técnico do CRM deixa de aparecer na mensagem.
+
 Neste momento, a interface principal não cria cabeçalho em vídeo ou documento.
 
 #### Classificação e aprovação
@@ -785,6 +792,7 @@ Os valores são segredos do ambiente e não devem ser enviados a outra IA. Os no
 - `N8N_INBOUND_WEBHOOK_URL`;
 - `N8N_ENCRYPTION_KEY`;
 - `TRACKING_BASE_URL`;
+- `TRACKING_LINK_BASE_URL`;
 - `CRM_PUBLIC_URL`;
 - `EDUZZ_WEBHOOK_SECRET`;
 - `XAI_API_KEY`;

@@ -847,7 +847,9 @@ function createTrackingCode(): string {
   return randomBytes(12).toString('base64url');
 }
 
-function trackingPublicUrl(code: string): string {
+export function trackingPublicUrl(code: string): string {
+  const publicBase = process.env.TRACKING_LINK_BASE_URL?.trim();
+  if (publicBase) return `${publicBase.replace(/\/$/, '')}/${code}`;
   const base =
     process.env.TRACKING_BASE_URL?.trim() ||
     process.env.CRM_PUBLIC_URL?.trim() ||

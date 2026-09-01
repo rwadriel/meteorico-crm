@@ -55,6 +55,7 @@ services:
       N8N_STATUS_WEBHOOK_URL: http://n8n:5678/webhook/meteorico-status
       N8N_INBOUND_WEBHOOK_URL: http://n8n:5678/webhook/meteorico-inbound
       TRACKING_BASE_URL: ${TRACKING_BASE_URL:-https://meteorico.musicalucrativa.com.br}
+      TRACKING_LINK_BASE_URL: ${TRACKING_LINK_BASE_URL:-https://musicalucrativa.com.br/r}
       TZ: America/Belem
     expose:
       - "4080"

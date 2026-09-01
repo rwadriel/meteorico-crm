@@ -486,12 +486,18 @@ export function FollowupCampaignsPage() {
           />
         ))}
         {selectedTemplate?.urlMode === 'button' && (
-          <Input
-            label="Destino do botão (URL HTTPS)"
-            value={offerUrl}
-            onChange={(event) => setOfferUrl(event.target.value)}
-            placeholder="https://..."
-          />
+          <div>
+            <Input
+              label="Página final aberta pelo botão (URL HTTPS)"
+              value={offerUrl}
+              onChange={(event) => setOfferUrl(event.target.value)}
+              placeholder="https://musicalucrativa.com.br/"
+            />
+            <p className="text-xs text-secondary" style={{ marginTop: '-0.5rem' }}>
+              Este é o destino real desta campanha. O CRM usa um endereço rastreado do domínio
+              musicalucrativa.com.br para medir os cliques antes de abrir esta página.
+            </p>
+          </div>
         )}
         <div
           className="grid gap-4"

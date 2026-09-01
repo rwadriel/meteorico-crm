@@ -430,7 +430,8 @@ export function TemplatesPage() {
             </Button>
           </div>
           <p className="text-xs text-secondary" style={{ marginBottom: '0.6rem' }}>
-            O link usa a URL escolhida na campanha e mede cliques. “SAIR” registra o opt-out
+            Aqui você define somente o tipo e o texto visível do botão para aprovação da Meta. A
+            página que será aberta é escolhida depois, em cada campanha. “SAIR” registra o opt-out
             automaticamente.
           </p>
           {buttons.map((button, index) => (
@@ -456,7 +457,7 @@ export function TemplatesPage() {
                   )
                 }
               >
-                <option value="URL">Link rastreado</option>
+                <option value="URL">Abrir site (destino na campanha)</option>
                 <option value="QUICK_REPLY">Resposta rápida</option>
               </select>
               <input

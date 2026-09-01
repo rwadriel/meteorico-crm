@@ -97,6 +97,36 @@ describe('Meta template management', () => {
     });
   });
 
+  it('uses the branded main-domain path in newly submitted URL buttons', () => {
+    const previous = process.env.TRACKING_LINK_BASE_URL;
+    process.env.TRACKING_LINK_BASE_URL = 'https://musicalucrativa.com.br/r';
+    try {
+      const payload = buildMetaTemplatePayload({
+        name: 'botao_dominio_principal',
+        category: 'MARKETING',
+        body: 'Acesse o conteúdo.',
+        buttons: [{ type: 'URL', text: 'Acessar' }],
+      });
+      expect(payload).toMatchObject({
+        components: [
+          { type: 'BODY' },
+          {
+            type: 'BUTTONS',
+            buttons: [
+              {
+                url: 'https://musicalucrativa.com.br/r/{{1}}',
+                example: ['https://musicalucrativa.com.br/r/exemplo1234567890'],
+              },
+            ],
+          },
+        ],
+      });
+    } finally {
+      if (previous === undefined) delete process.env.TRACKING_LINK_BASE_URL;
+      else process.env.TRACKING_LINK_BASE_URL = previous;
+    }
+  });
+
   it('rejects skipped variables and missing examples before calling Meta', () => {
     expect(() =>
       validateMetaTemplateInput({

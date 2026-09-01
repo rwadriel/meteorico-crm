@@ -4,11 +4,24 @@ import {
   buildFollowupTemplateComponents,
   getFollowupTemplate,
   isOptOutText,
+  trackingPublicUrl,
   validateFollowupCampaignInput,
   validateFollowupCampaignWithDb,
 } from '../services/followup.js';
 
 describe('follow-up campaign rules', () => {
+  it('creates the public tracked link on the main branded domain', () => {
+    const previous = process.env.TRACKING_LINK_BASE_URL;
+    process.env.TRACKING_LINK_BASE_URL = 'https://musicalucrativa.com.br/r/';
+    try {
+      expect(trackingPublicUrl('codigo-unico-123')).toBe(
+        'https://musicalucrativa.com.br/r/codigo-unico-123',
+      );
+    } finally {
+      if (previous === undefined) delete process.env.TRACKING_LINK_BASE_URL;
+      else process.env.TRACKING_LINK_BASE_URL = previous;
+    }
+  });
   it('builds Meta delivery components for tracked and quick-reply buttons', () => {
     expect(
       buildFollowupTemplateComponents({

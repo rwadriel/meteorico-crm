@@ -583,10 +583,12 @@ function normalizeTemplateButtons(buttons: MetaTemplateButton[] | undefined): Me
 }
 
 function trackingButtonTemplateUrl(): string {
-  return trackingButtonExampleUrl().replace(/\/api\/t\/[^/]+$/, '/api/t/{{1}}');
+  return trackingButtonExampleUrl().replace(/\/[^/]+$/, '/{{1}}');
 }
 
 function trackingButtonExampleUrl(): string {
+  const publicBase = process.env.TRACKING_LINK_BASE_URL?.trim();
+  if (publicBase) return `${publicBase.replace(/\/$/, '')}/exemplo1234567890`;
   const base =
     process.env.TRACKING_BASE_URL?.trim() ||
     process.env.CRM_PUBLIC_URL?.trim() ||
