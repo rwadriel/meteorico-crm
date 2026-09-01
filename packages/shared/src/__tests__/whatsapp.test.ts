@@ -166,15 +166,28 @@ describe('MetaCloudWhatsAppProvider', () => {
     },
   );
 
-  it('ignores events for a different WABA or phone number id', () => {
+  it('ignores a different WABA and accepts every phone number in the configured WABA', () => {
     const provider = createProvider();
     const wrongWaba = metaPayload({ messages: [] });
     wrongWaba.entry[0].id = 'other-waba';
-    const wrongPhone = metaPayload({ messages: [] });
-    wrongPhone.entry[0].changes[0].value.metadata.phone_number_id = 'other-phone';
+    const secondPhone = metaPayload({
+      messages: [
+        {
+          id: 'wamid.second-number',
+          from: '5591999990002',
+          timestamp: '1786400001',
+          type: 'text',
+          text: { body: 'SAIR' },
+        },
+      ],
+    });
+    secondPhone.entry[0].changes[0].value.metadata.phone_number_id = 'second-phone';
 
     expect(provider.parseWebhook({}, wrongWaba)).toEqual([]);
-    expect(provider.parseWebhook({}, wrongPhone)).toEqual([]);
+    expect(provider.parseWebhook({}, secondPhone)?.[0]).toMatchObject({
+      type: 'message',
+      message: { phoneNumberId: 'second-phone', content: 'SAIR' },
+    });
   });
 
   it('sends through the configured phone number and returns the provider id', async () => {

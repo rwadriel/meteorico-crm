@@ -34,6 +34,18 @@ interface AudienceList extends Audience {
   createdAt: string;
 }
 
+interface WhatsAppSender {
+  id: string;
+  internalName: string;
+  displayPhoneNumber: string;
+  verifiedName: string;
+  status: string;
+  qualityRating: string;
+  isDefault: boolean;
+  isActive: boolean;
+  sendEnabled: boolean;
+}
+
 interface FollowupCampaign {
   id: string;
   name: string;
@@ -41,6 +53,11 @@ interface FollowupCampaign {
   offerUrl: string | null;
   audienceListId: string | null;
   audienceList: { id: string; name: string } | null;
+  senderId: string | null;
+  sender: Pick<
+    WhatsAppSender,
+    'id' | 'internalName' | 'displayPhoneNumber' | 'verifiedName'
+  > | null;
   status: string;
   eligibleContacts: number;
   queuedCount: number;
@@ -97,6 +114,7 @@ export function FollowupCampaignsPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [audience, setAudience] = useState<Audience | null>(null);
   const [audiences, setAudiences] = useState<AudienceList[]>([]);
+  const [senders, setSenders] = useState<WhatsAppSender[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -106,6 +124,7 @@ export function FollowupCampaignsPage() {
   const [templateParameters, setTemplateParameters] = useState<string[]>([]);
   const [offerUrl, setOfferUrl] = useState('');
   const [audienceListId, setAudienceListId] = useState('');
+  const [senderId, setSenderId] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmStart, setConfirmStart] = useState<FollowupCampaign | null>(null);
   const [confirmCancel, setConfirmCancel] = useState<FollowupCampaign | null>(null);
@@ -132,31 +151,41 @@ export function FollowupCampaignsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [campaignResponse, templateResponse, audienceResponse, audiencesResponse] =
-        await Promise.all([
-          fetch(`${API}/api/followup/campaigns?limit=100`, { credentials: 'include' }),
-          fetch(`${API}/api/followup/templates`, { credentials: 'include' }),
-          fetch(`${API}/api/followup/audience`, { credentials: 'include' }),
-          fetch(`${API}/api/followup/audiences`, { credentials: 'include' }),
-        ]);
+      const [
+        campaignResponse,
+        templateResponse,
+        audienceResponse,
+        audiencesResponse,
+        sendersResponse,
+      ] = await Promise.all([
+        fetch(`${API}/api/followup/campaigns?limit=100`, { credentials: 'include' }),
+        fetch(`${API}/api/followup/templates`, { credentials: 'include' }),
+        fetch(`${API}/api/followup/audience`, { credentials: 'include' }),
+        fetch(`${API}/api/followup/audiences`, { credentials: 'include' }),
+        fetch(`${API}/api/whatsapp/senders`, { credentials: 'include' }),
+      ]);
       if (
         !campaignResponse.ok ||
         !templateResponse.ok ||
         !audienceResponse.ok ||
-        !audiencesResponse.ok
+        !audiencesResponse.ok ||
+        !sendersResponse.ok
       ) {
         throw new Error('Não foi possível carregar o módulo de follow-up');
       }
-      const [campaignData, templateData, audienceData, audiencesData] = await Promise.all([
-        campaignResponse.json(),
-        templateResponse.json(),
-        audienceResponse.json(),
-        audiencesResponse.json(),
-      ]);
+      const [campaignData, templateData, audienceData, audiencesData, sendersData] =
+        await Promise.all([
+          campaignResponse.json(),
+          templateResponse.json(),
+          audienceResponse.json(),
+          audiencesResponse.json(),
+          sendersResponse.json(),
+        ]);
       setCampaigns(campaignData.campaigns);
       setTemplates(templateData.templates);
       setAudience(audienceData);
       setAudiences(audiencesData.audiences);
+      setSenders(sendersData.senders);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Erro inesperado');
     } finally {
@@ -169,6 +198,12 @@ export function FollowupCampaignsPage() {
       setAudienceListId(audiences[0].id);
     }
   }, [audiences, audienceListId]);
+  useEffect(() => {
+    const available = senders.filter((sender) => sender.isActive && sender.sendEnabled);
+    if (!available.some((sender) => sender.id === senderId)) {
+      setSenderId(available.find((sender) => sender.isDefault)?.id ?? available[0]?.id ?? '');
+    }
+  }, [senders, senderId]);
   useEffect(() => {
     load();
   }, [load]);
@@ -221,6 +256,7 @@ export function FollowupCampaignsPage() {
           templateParameters,
           offerUrl: selectedTemplate?.urlMode === 'button' ? offerUrl : undefined,
           audienceListId,
+          senderId,
           batchSize,
           batchIntervalSeconds,
           cooldownDays,
@@ -282,6 +318,14 @@ export function FollowupCampaignsPage() {
       key: 'audienceList',
       header: 'Público',
       render: (campaign: FollowupCampaign) => campaign.audienceList?.name ?? 'Base geral (legado)',
+    },
+    {
+      key: 'sender',
+      header: 'Remetente',
+      render: (campaign: FollowupCampaign) =>
+        campaign.sender
+          ? `${campaign.sender.internalName || campaign.sender.verifiedName} · ${campaign.sender.displayPhoneNumber}`
+          : 'Número padrão (legado)',
     },
     {
       key: 'status',
@@ -417,6 +461,7 @@ export function FollowupCampaignsPage() {
               onClick={createCampaign}
               disabled={
                 !audienceListId ||
+                !senderId ||
                 !name.trim() ||
                 (selectedTemplate?.urlMode === 'button' && !offerUrl.trim())
               }
@@ -448,6 +493,34 @@ export function FollowupCampaignsPage() {
           {audiences.length === 0 && (
             <p className="text-sm" style={{ color: 'var(--warning)', marginTop: '0.4rem' }}>
               Importe um CSV de contatos para criar o primeiro público.
+            </p>
+          )}
+        </div>
+        <div className="form-group">
+          <label>Número remetente</label>
+          <select
+            className="input"
+            value={senderId}
+            onChange={(event) => setSenderId(event.target.value)}
+          >
+            {senders
+              .filter((sender) => sender.isActive && sender.sendEnabled)
+              .map((sender) => (
+                <option key={sender.id} value={sender.id}>
+                  {sender.internalName || sender.verifiedName} — {sender.displayPhoneNumber}
+                  {sender.isDefault ? ' (padrão)' : ''}
+                </option>
+              ))}
+          </select>
+          {!senderId && (
+            <p className="text-sm" style={{ color: 'var(--warning)', marginTop: '0.4rem' }}>
+              Sincronize e libere um número em Configurações antes de criar a campanha.
+            </p>
+          )}
+          {senderId && (
+            <p className="text-xs text-secondary" style={{ marginTop: '0.4rem' }}>
+              Nome público na Meta:{' '}
+              {senders.find((sender) => sender.id === senderId)?.verifiedName || 'não informado'}
             </p>
           )}
         </div>
@@ -608,7 +681,7 @@ export function FollowupCampaignsPage() {
           setConfirmStart(null);
         }}
         title="Iniciar campanha real"
-        message={`${confirmStart?.eligibleContacts || 0} contatos do público “${confirmStart?.audienceList?.name ?? 'selecionado'}” poderão receber este template. Confirme somente após executar o Modo Teste.`}
+        message={`${confirmStart?.eligibleContacts || 0} contatos do público “${confirmStart?.audienceList?.name ?? 'selecionado'}” poderão receber este template pelo número ${confirmStart?.sender?.displayPhoneNumber ?? 'padrão'}. Confirme somente após executar o Modo Teste.`}
         confirmLabel="INICIAR CAMPANHA"
       />
       <ConfirmDialog

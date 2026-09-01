@@ -7,6 +7,7 @@ import {
 } from '@meteorico/shared';
 import { uploadWhatsAppImage } from './meta-media.js';
 import { extractMetaTemplateButtons, type MetaTemplateButton } from './meta-template.js';
+import { resolveWhatsAppSender } from './whatsapp-sender.js';
 
 export const FOLLOWUP_TEMPLATES = [
   {
@@ -386,7 +387,8 @@ export async function processFollowupBatch(db: PrismaClient, campaignId: string,
   if (process.env.WHATSAPP_OUTBOUND_ENABLED !== 'true') {
     throw new Error('Envio do WhatsApp está desativado');
   }
-  campaign = await ensureCampaignHeaderMedia(db, campaign);
+  const sender = await resolveWhatsAppSender(db, campaign.senderId);
+  campaign = await ensureCampaignHeaderMedia(db, campaign, sender.phoneNumberId);
   const templateButtons = await getCampaignTemplateButtons(db, campaign);
   const hasTrackedUrlButton = templateButtons.some(
     (button) => button.type === 'URL' && button.url?.includes('{{1}}'),
@@ -451,6 +453,7 @@ export async function processFollowupBatch(db: PrismaClient, campaignId: string,
         parameters[0] = trackingPublicUrl(trackingCode);
       }
       const metaMessageId = await sendTemplateMessage({
+        phoneNumberId: sender.phoneNumberId,
         to: phone,
         templateName: campaign.templateName,
         language: campaign.templateLanguage,
@@ -699,6 +702,7 @@ function maskPhone(phone: string): string {
 }
 
 async function sendTemplateMessage(input: {
+  phoneNumberId: string;
   to: string;
   templateName: string;
   language: string;
@@ -712,9 +716,8 @@ async function sendTemplateMessage(input: {
   if (provider !== 'meta_cloud') throw new Error('Provedor do WhatsApp não suportado');
 
   const token = process.env.META_WHATSAPP_ACCESS_TOKEN;
-  const phoneNumberId = process.env.META_WHATSAPP_PHONE_NUMBER_ID;
   const graphVersion = process.env.META_GRAPH_API_VERSION ?? 'v25.0';
-  if (!token || !phoneNumberId) throw new Error('Meta Cloud API não configurada');
+  if (!token || !input.phoneNumberId) throw new Error('Meta Cloud API não configurada');
 
   const stagingAllowlist = process.env.WHATSAPP_STAGING_ALLOWLIST;
   const safetyEnvironment = process.env.DEPLOYMENT_ENV ?? 'development';
@@ -722,7 +725,7 @@ async function sendTemplateMessage(input: {
 
   const components = buildFollowupTemplateComponents(input);
   const response = await fetch(
-    `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/messages`,
+    `https://graph.facebook.com/${graphVersion}/${input.phoneNumberId}/messages`,
     {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -864,7 +867,7 @@ async function ensureCampaignHeaderMedia<
     templateLanguage: string;
     headerMediaId: string | null;
   },
->(db: PrismaClient, campaign: T): Promise<T> {
+>(db: PrismaClient, campaign: T, phoneNumberId: string): Promise<T> {
   if (campaign.headerMediaId) return campaign;
   const template = await db.messageTemplate.findFirst({
     where: {
@@ -881,11 +884,14 @@ async function ensureCampaignHeaderMedia<
   }
   const storedData = new Uint8Array(version.headerData.length);
   storedData.set(version.headerData);
-  const headerMediaId = await uploadWhatsAppImage({
-    data: storedData,
-    mimeType: version.headerMimeType as 'image/jpeg' | 'image/png',
-    fileName: version.headerFileName,
-  });
+  const headerMediaId = await uploadWhatsAppImage(
+    {
+      data: storedData,
+      mimeType: version.headerMimeType as 'image/jpeg' | 'image/png',
+      fileName: version.headerFileName,
+    },
+    phoneNumberId,
+  );
   await db.followupCampaign.update({
     where: { id: campaign.id },
     data: { headerMediaId },

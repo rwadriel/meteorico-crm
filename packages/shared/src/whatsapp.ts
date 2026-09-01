@@ -241,7 +241,7 @@ export class MetaCloudWhatsAppProvider implements MessagingProvider {
 
         const metadata = asRecord(value.metadata);
         const phoneNumberId = readString(metadata?.phone_number_id);
-        if (phoneNumberId !== this.config.phoneNumberId) continue;
+        if (!phoneNumberId) continue;
 
         if (Array.isArray(value.messages)) {
           for (const rawMessage of value.messages) {

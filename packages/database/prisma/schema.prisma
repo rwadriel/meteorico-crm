@@ -170,6 +170,7 @@ model FollowupCampaign {
   offerUrl             String?   @map("offer_url")
   templateParameters   Json?     @map("template_parameters")
   audienceListId       String?   @map("audience_list_id")
+  senderId             String?   @map("sender_id")
   scheduledAt          DateTime? @map("scheduled_at")
   batchSize            Int       @default(5) @map("batch_size")
   batchIntervalSeconds Int       @default(60) @map("batch_interval_seconds")
@@ -197,11 +198,37 @@ model FollowupCampaign {
 
   creator      AdminUser                 @relation(fields: [createdBy], references: [id])
   audienceList ContactList?              @relation(fields: [audienceListId], references: [id])
+  sender       WhatsAppSender?           @relation(fields: [senderId], references: [id])
   messages     FollowupCampaignMessage[]
 
   @@index([status, createdAt])
   @@index([audienceListId])
+  @@index([senderId])
   @@map("followup_campaigns")
+}
+
+model WhatsAppSender {
+  id                     String   @id @default(uuid())
+  phoneNumberId          String   @unique @map("phone_number_id")
+  wabaId                 String   @map("waba_id")
+  displayPhoneNumber     String   @default("") @map("display_phone_number")
+  verifiedName           String   @default("") @map("verified_name")
+  internalName           String   @default("") @map("internal_name")
+  status                 String   @default("PENDING")
+  qualityRating          String   @default("UNKNOWN") @map("quality_rating")
+  codeVerificationStatus String   @default("UNKNOWN") @map("code_verification_status")
+  isDefault              Boolean  @default(false) @map("is_default")
+  isActive               Boolean  @default(true) @map("is_active")
+  sendEnabled            Boolean  @default(false) @map("send_enabled")
+  lastSyncedAt           DateTime? @map("last_synced_at")
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  campaigns FollowupCampaign[]
+
+  @@index([isActive, sendEnabled])
+  @@index([wabaId])
+  @@map("whatsapp_senders")
 }
 
 model ContactList {

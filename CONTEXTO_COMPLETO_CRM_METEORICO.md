@@ -312,6 +312,10 @@ Exibe somente indicadores, nunca os valores das credenciais:
 
 Também permite:
 
+- sincronizar todos os números do mesmo WABA com a Meta;
+- definir um nome interno para identificar cada número no CRM;
+- liberar ou bloquear cada número para novas campanhas;
+- escolher um número remetente padrão;
 - alterar configurações persistidas do sistema;
 - alterar a própria senha;
 - encerrar todas as sessões abertas após troca de senha;
@@ -374,6 +378,8 @@ Entre as expressões reconhecidas estão:
 - variações como “quero sair”, “não quero mais receber” e “me remova da lista”.
 
 O opt-out é global e persistente. Reimportar o mesmo número em outro CSV não remove o bloqueio. Assim, se 50 pessoas pedirem para sair e forem reimportadas depois, continuam excluídas automaticamente.
+
+Essa proteção também é global entre remetentes: uma pessoa que pediu para sair por qualquer número não recebe novas campanhas por outro número cadastrado no mesmo CRM.
 
 O operador também pode bloquear manualmente um número na tela de contatos e exportar a lista global de opt-outs.
 
@@ -810,6 +816,7 @@ Os valores são segredos do ambiente e não devem ser enviados a outra IA. Os no
 8. Os módulos avançados de grupos, fluxos, IA, auditoria e campanhas clássicas existem, mas estão fora do menu principal simplificado.
 9. Redis e worker não participam do Docker Compose compacto atual; o follow-up de produção é orquestrado pelo n8n.
 10. Dados operacionais e segredos continuam no EasyPanel e nunca devem ser copiados para documentos de contexto.
+11. O nome interno do remetente é editável no CRM, mas o nome público exibido no WhatsApp é controlado e aprovado pela Meta.
 
 ## 19. Regras para qualquer IA que analise este sistema
 
@@ -837,15 +844,16 @@ Ao usar este documento como contexto, a outra IA deve:
 4. Cadastrar ou sincronizar um template oficial.
 5. Se quiser imagem, selecionar JPG/PNG no cabeçalho antes de enviar à Meta.
 6. Aguardar o template ficar APPROVED.
-7. Criar campanha escolhendo explicitamente o público.
-8. Preencher variáveis e URL HTTPS.
-9. Configurar lote, intervalo, cooldown e agendamento.
-10. Rodar Modo Teste.
-11. Conferir elegíveis, exclusões e consentimentos ausentes.
-12. Iniciar a campanha real.
-13. Acompanhar entrega, leitura, resposta, opt-out, clique e CTR.
-14. Pausar ou cancelar se houver anomalia.
-15. Exportar o relatório final em CSV.
+7. Em Configurações, sincronizar números com a Meta e liberar somente os já conectados.
+8. Criar campanha escolhendo explicitamente o público e o número remetente.
+9. Preencher variáveis e URL HTTPS.
+10. Configurar lote, intervalo, cooldown e agendamento.
+11. Rodar Modo Teste.
+12. Conferir elegíveis, exclusões, consentimentos ausentes e remetente selecionado.
+13. Iniciar a campanha real.
+14. Acompanhar entrega, leitura, resposta, opt-out, clique e CTR.
+15. Pausar ou cancelar se houver anomalia.
+16. Exportar o relatório final em CSV.
 ```
 
 ## 21. Histórico recente relevante

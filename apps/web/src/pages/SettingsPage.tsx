@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Button, Table, Alert, Badge, Modal, Input } from '../components/index.js';
+import { Button, Table, Alert, Badge, Modal, Input, ConfirmDialog } from '../components/index.js';
 import { useAuth } from '../context/AuthContext.js';
 
 const API = import.meta.env.VITE_API_URL ?? '';
@@ -40,6 +40,22 @@ interface SystemUser {
   [k: string]: unknown;
 }
 
+interface WhatsAppSender {
+  id: string;
+  phoneNumberId: string;
+  displayPhoneNumber: string;
+  verifiedName: string;
+  internalName: string;
+  status: string;
+  qualityRating: string;
+  codeVerificationStatus: string;
+  isDefault: boolean;
+  isActive: boolean;
+  sendEnabled: boolean;
+  lastSyncedAt: string | null;
+  [k: string]: unknown;
+}
+
 export function SettingsPage() {
   const { user: currentUser } = useAuth();
   const [settings, setSettings] = useState<Setting[]>([]);
@@ -54,6 +70,12 @@ export function SettingsPage() {
   const [newPassword, setNewPassword] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
   const [whatsAppStatus, setWhatsAppStatus] = useState<WhatsAppStatus | null>(null);
+  const [senders, setSenders] = useState<WhatsAppSender[]>([]);
+  const [sendersLoading, setSendersLoading] = useState(false);
+  const [senderSaving, setSenderSaving] = useState(false);
+  const [editSender, setEditSender] = useState<WhatsAppSender | null>(null);
+  const [editSenderName, setEditSenderName] = useState('');
+  const [confirmEnableSender, setConfirmEnableSender] = useState<WhatsAppSender | null>(null);
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
   const [accessRoles, setAccessRoles] = useState<AccessRole[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -81,7 +103,9 @@ export function SettingsPage() {
     }
   }, []);
 
-  useEffect(() => { fetchSettings(); }, [fetchSettings]);
+  useEffect(() => {
+    fetchSettings();
+  }, [fetchSettings]);
 
   useEffect(() => {
     fetch(`${API}/api/followup/system-status`, { credentials: 'include' })
@@ -90,8 +114,79 @@ export function SettingsPage() {
         return response.json() as Promise<WhatsAppStatus>;
       })
       .then(setWhatsAppStatus)
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Falha ao carregar o status do WhatsApp'));
+      .catch((reason: unknown) =>
+        setError(
+          reason instanceof Error ? reason.message : 'Falha ao carregar o status do WhatsApp',
+        ),
+      );
   }, []);
+
+  const fetchSenders = useCallback(async () => {
+    setSendersLoading(true);
+    try {
+      const response = await fetch(`${API}/api/whatsapp/senders`, { credentials: 'include' });
+      const body = (await response.json().catch(() => null)) as {
+        senders?: WhatsAppSender[];
+        message?: string;
+      } | null;
+      if (!response.ok) throw new Error(body?.message ?? 'Falha ao carregar números remetentes');
+      setSenders(Array.isArray(body?.senders) ? body.senders : []);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Falha ao carregar números remetentes');
+    } finally {
+      setSendersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSenders();
+  }, [fetchSenders]);
+
+  async function syncSenders() {
+    setSenderSaving(true);
+    setError('');
+    try {
+      const response = await fetch(`${API}/api/whatsapp/senders/sync`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const body = (await response.json().catch(() => null)) as {
+        synced?: number;
+        senders?: WhatsAppSender[];
+        message?: string;
+      } | null;
+      if (!response.ok) throw new Error(body?.message ?? 'Não foi possível sincronizar com a Meta');
+      setSenders(Array.isArray(body?.senders) ? body.senders : []);
+      setSuccess(`${body?.synced ?? 0} número(s) sincronizado(s) com a Meta.`);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : 'Não foi possível sincronizar com a Meta',
+      );
+    } finally {
+      setSenderSaving(false);
+    }
+  }
+
+  async function patchSender(id: string, data: Record<string, unknown>, successMessage: string) {
+    setSenderSaving(true);
+    setError('');
+    try {
+      const response = await fetch(`${API}/api/whatsapp/senders/${id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const body = (await response.json().catch(() => null)) as { message?: string } | null;
+      if (!response.ok) throw new Error(body?.message ?? 'Não foi possível alterar o número');
+      setSuccess(successMessage);
+      await fetchSenders();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Não foi possível alterar o número');
+    } finally {
+      setSenderSaving(false);
+    }
+  }
 
   const fetchUsers = useCallback(async () => {
     if (!canManageUsers) return;
@@ -109,7 +204,10 @@ export function SettingsPage() {
       const roles = Array.isArray(rolesBody.roles) ? rolesBody.roles : [];
       setSystemUsers(Array.isArray(usersBody.users) ? usersBody.users : []);
       setAccessRoles(roles);
-      setNewUserRoleId((current) => current || roles.find((role) => role.name === 'operator')?.id || roles[0]?.id || '');
+      setNewUserRoleId(
+        (current) =>
+          current || roles.find((role) => role.name === 'operator')?.id || roles[0]?.id || '',
+      );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Falha ao carregar usuários');
     } finally {
@@ -117,7 +215,9 @@ export function SettingsPage() {
     }
   }, [canManageUsers]);
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   async function handleCreateUser() {
     setUserSaving(true);
@@ -134,7 +234,7 @@ export function SettingsPage() {
           roleId: newUserRoleId,
         }),
       });
-      const body = await response.json().catch(() => null) as { message?: string } | null;
+      const body = (await response.json().catch(() => null)) as { message?: string } | null;
       if (!response.ok) throw new Error(body?.message ?? 'Não foi possível criar o usuário');
       setShowCreateUser(false);
       setNewUserName('');
@@ -159,7 +259,7 @@ export function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: !user.isActive }),
       });
-      const body = await response.json().catch(() => null) as { message?: string } | null;
+      const body = (await response.json().catch(() => null)) as { message?: string } | null;
       if (!response.ok) throw new Error(body?.message ?? 'Não foi possível alterar o acesso');
       setSuccess(user.isActive ? 'Acesso desativado e sessões encerradas.' : 'Acesso reativado.');
       await fetchUsers();
@@ -181,7 +281,7 @@ export function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: resetUserPassword }),
       });
-      const body = await response.json().catch(() => null) as { message?: string } | null;
+      const body = (await response.json().catch(() => null)) as { message?: string } | null;
       if (!response.ok) throw new Error(body?.message ?? 'Não foi possível redefinir a senha');
       setResetUser(null);
       setResetUserPassword('');
@@ -236,12 +336,14 @@ export function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ currentPassword, newPassword }),
       });
-      const body = await response.json().catch(() => null) as { message?: string } | null;
+      const body = (await response.json().catch(() => null)) as { message?: string } | null;
       if (!response.ok) throw new Error(body?.message ?? 'Não foi possível alterar a senha');
       setCurrentPassword('');
       setNewPassword('');
       setSuccess(body?.message ?? 'Senha alterada');
-      window.setTimeout(() => { window.location.href = '/login'; }, 1200);
+      window.setTimeout(() => {
+        window.location.href = '/login';
+      }, 1200);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Não foi possível alterar a senha');
     } finally {
@@ -269,7 +371,9 @@ export function SettingsPage() {
       key: 'actions',
       header: '',
       render: (s: Setting) => (
-        <Button size="sm" variant="secondary" onClick={() => openEdit(s)}>Editar</Button>
+        <Button size="sm" variant="secondary" onClick={() => openEdit(s)}>
+          Editar
+        </Button>
       ),
     },
   ];
@@ -302,9 +406,8 @@ export function SettingsPage() {
     {
       key: 'lastLoginAt',
       header: 'Último acesso',
-      render: (user: SystemUser) => user.lastLoginAt
-        ? new Date(user.lastLoginAt).toLocaleString('pt-BR')
-        : 'Nunca acessou',
+      render: (user: SystemUser) =>
+        user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('pt-BR') : 'Nunca acessou',
     },
     {
       key: 'actions',
@@ -314,7 +417,14 @@ export function SettingsPage() {
         if (user.role.name === 'owner') return <Badge variant="neutral">Proprietário</Badge>;
         return (
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="secondary" onClick={() => { setResetUser(user); setResetUserPassword(''); }}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setResetUser(user);
+                setResetUserPassword('');
+              }}
+            >
               Redefinir senha
             </Button>
             <Button
@@ -331,6 +441,97 @@ export function SettingsPage() {
     },
   ];
 
+  const senderColumns = [
+    {
+      key: 'internalName',
+      header: 'Identificação no CRM',
+      render: (sender: WhatsAppSender) => (
+        <div>
+          <p className="font-semibold">{sender.internalName || 'Sem nome interno'}</p>
+          <p className="text-xs text-secondary">
+            {sender.displayPhoneNumber || sender.phoneNumberId}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'verifiedName',
+      header: 'Nome público na Meta',
+      render: (sender: WhatsAppSender) => sender.verifiedName || 'Em definição',
+    },
+    {
+      key: 'status',
+      header: 'Meta',
+      render: (sender: WhatsAppSender) => (
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={sender.status === 'CONNECTED' ? 'success' : 'warning'}>
+            {sender.status === 'CONNECTED' ? 'Conectado' : 'Pendente'}
+          </Badge>
+          <Badge variant={sender.qualityRating === 'GREEN' ? 'success' : 'neutral'}>
+            Qualidade{' '}
+            {sender.qualityRating === 'GREEN' ? 'alta' : sender.qualityRating.toLowerCase()}
+          </Badge>
+        </div>
+      ),
+    },
+    {
+      key: 'usage',
+      header: 'Uso no CRM',
+      render: (sender: WhatsAppSender) => (
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={sender.sendEnabled && sender.isActive ? 'success' : 'neutral'}>
+            {sender.sendEnabled && sender.isActive ? 'Liberado' : 'Bloqueado'}
+          </Badge>
+          {sender.isDefault && <Badge variant="info">Padrão</Badge>}
+        </div>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Ações',
+      render: (sender: WhatsAppSender) => (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setEditSender(sender);
+              setEditSenderName(sender.internalName);
+            }}
+          >
+            Editar nome
+          </Button>
+          {!sender.isDefault && sender.sendEnabled && (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={senderSaving}
+              onClick={() => patchSender(sender.id, { isDefault: true }, 'Número padrão alterado.')}
+            >
+              Tornar padrão
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant={sender.sendEnabled ? 'danger' : 'secondary'}
+            disabled={senderSaving}
+            onClick={() =>
+              sender.sendEnabled
+                ? patchSender(
+                    sender.id,
+                    { sendEnabled: false },
+                    'Número bloqueado para novos envios.',
+                  )
+                : setConfirmEnableSender(sender)
+            }
+          >
+            {sender.sendEnabled ? 'Bloquear envios' : 'Liberar envios'}
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div>
       <div className="content-header">
@@ -340,35 +541,109 @@ export function SettingsPage() {
         </div>
       </div>
 
-      {error && <Alert variant="danger" onDismiss={() => setError('')}>{error}</Alert>}
-      {success && <Alert variant="success" onDismiss={() => setSuccess('')}>{success}</Alert>}
+      {error && (
+        <Alert variant="danger" onDismiss={() => setError('')}>
+          {error}
+        </Alert>
+      )}
+      {success && (
+        <Alert variant="success" onDismiss={() => setSuccess('')}>
+          {success}
+        </Alert>
+      )}
 
       <div className="card" style={{ marginBottom: '1rem' }}>
         <div className="flex items-center justify-between gap-3" style={{ marginBottom: '1rem' }}>
           <div>
             <h2>Status do WhatsApp</h2>
-            <p className="text-sm text-secondary">Somente indicadores; credenciais nunca são exibidas.</p>
+            <p className="text-sm text-secondary">
+              Somente indicadores; credenciais nunca são exibidas.
+            </p>
           </div>
           <Badge variant={whatsAppStatus?.metaConfigured ? 'success' : 'warning'}>
             {whatsAppStatus?.metaConfigured ? 'Meta configurada' : 'Configuração pendente'}
           </Badge>
         </div>
-        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
+        <div
+          className="grid gap-4"
+          style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}
+        >
           <StatusText label="Provedor" value={whatsAppStatus?.provider ?? '—'} />
           <StatusText label="Graph API" value={whatsAppStatus?.graphVersion ?? '—'} />
-          <StatusText label="Disparo" value={whatsAppStatus?.outboundEnabled ? 'Ativado' : 'Bloqueado'} />
-          <StatusText label="n8n" value={whatsAppStatus?.n8nConfigured ? 'Configurado' : 'Pendente'} />
-          <StatusText label="Templates aprovados" value={whatsAppStatus ? `${whatsAppStatus.approvedTemplates}/${whatsAppStatus.requiredTemplates}` : '—'} />
+          <StatusText
+            label="Disparo"
+            value={whatsAppStatus?.outboundEnabled ? 'Ativado' : 'Bloqueado'}
+          />
+          <StatusText
+            label="n8n"
+            value={whatsAppStatus?.n8nConfigured ? 'Configurado' : 'Pendente'}
+          />
+          <StatusText
+            label="Templates aprovados"
+            value={
+              whatsAppStatus
+                ? `${whatsAppStatus.approvedTemplates}/${whatsAppStatus.requiredTemplates}`
+                : '—'
+            }
+          />
         </div>
       </div>
 
       <div className="card" style={{ marginBottom: '1rem' }}>
+        <div className="flex items-center justify-between gap-3" style={{ marginBottom: '1rem' }}>
+          <div>
+            <h2>Números remetentes</h2>
+            <p className="text-sm text-secondary">
+              O nome interno é editável. O nome que aparece no WhatsApp é controlado pela Meta.
+            </p>
+          </div>
+          <Button variant="secondary" loading={senderSaving} onClick={syncSenders}>
+            Sincronizar com a Meta
+          </Button>
+        </div>
+        {sendersLoading ? (
+          <div style={{ padding: '2rem', textAlign: 'center' }}>Carregando números...</div>
+        ) : (
+          <Table columns={senderColumns} data={senders} emptyMessage="Nenhum número encontrado" />
+        )}
+        <p className="text-xs text-secondary" style={{ marginTop: '0.75rem' }}>
+          Só libere um novo número depois que o Gerenciador do WhatsApp mostrar o status Conectado.
+          Opt-outs continuam valendo para o contato em todos os números.
+        </p>
+      </div>
+
+      <div className="card" style={{ marginBottom: '1rem' }}>
         <h2 style={{ marginBottom: '0.25rem' }}>Segurança</h2>
-        <p className="text-sm text-secondary" style={{ marginBottom: '1rem' }}>Alterar a senha encerra todas as sessões abertas.</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem', alignItems: 'end' }}>
-          <Input label="Senha atual" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} />
-          <Input label="Nova senha (mínimo 12 caracteres)" type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
-          <Button loading={changingPassword} disabled={!currentPassword || newPassword.length < 12} onClick={handleChangePassword}>Alterar senha</Button>
+        <p className="text-sm text-secondary" style={{ marginBottom: '1rem' }}>
+          Alterar a senha encerra todas as sessões abertas.
+        </p>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: '0.75rem',
+            alignItems: 'end',
+          }}
+        >
+          <Input
+            label="Senha atual"
+            type="password"
+            value={currentPassword}
+            onChange={(event) => setCurrentPassword(event.target.value)}
+          />
+          <Input
+            label="Nova senha (mínimo 12 caracteres)"
+            type="password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+          />
+          <Button
+            loading={changingPassword}
+            disabled={!currentPassword || newPassword.length < 12}
+            onClick={handleChangePassword}
+          >
+            Alterar senha
+          </Button>
         </div>
       </div>
 
@@ -377,14 +652,20 @@ export function SettingsPage() {
           <div className="flex items-center justify-between gap-3" style={{ marginBottom: '1rem' }}>
             <div>
               <h2>Usuários com acesso</h2>
-              <p className="text-sm text-secondary">Crie acessos individuais e encerre permissões sem compartilhar sua senha.</p>
+              <p className="text-sm text-secondary">
+                Crie acessos individuais e encerre permissões sem compartilhar sua senha.
+              </p>
             </div>
             <Button onClick={() => setShowCreateUser(true)}>+ Adicionar usuário</Button>
           </div>
           {usersLoading ? (
             <div style={{ padding: '2rem', textAlign: 'center' }}>Carregando usuários...</div>
           ) : (
-            <Table columns={userColumns} data={systemUsers} emptyMessage="Nenhum usuário encontrado" />
+            <Table
+              columns={userColumns}
+              data={systemUsers}
+              emptyMessage="Nenhum usuário encontrado"
+            />
           )}
         </div>
       )}
@@ -407,8 +688,12 @@ export function SettingsPage() {
         title={`Editar: ${editSetting?.key ?? ''}`}
         footer={
           <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-            <Button variant="secondary" onClick={() => setEditSetting(null)}>Cancelar</Button>
-            <Button loading={saving} onClick={handleSave}>Salvar</Button>
+            <Button variant="secondary" onClick={() => setEditSetting(null)}>
+              Cancelar
+            </Button>
+            <Button loading={saving} onClick={handleSave}>
+              Salvar
+            </Button>
           </div>
         }
       >
@@ -422,7 +707,11 @@ export function SettingsPage() {
             style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}
           />
         </div>
-        <Input label="Descricao" value={editDescription} onChange={(e) => setEditDescription(e.target.value)} />
+        <Input
+          label="Descricao"
+          value={editDescription}
+          onChange={(e) => setEditDescription(e.target.value)}
+        />
       </Modal>
 
       <Modal
@@ -431,10 +720,17 @@ export function SettingsPage() {
         title="Adicionar usuário"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setShowCreateUser(false)}>Cancelar</Button>
+            <Button variant="secondary" onClick={() => setShowCreateUser(false)}>
+              Cancelar
+            </Button>
             <Button
               loading={userSaving}
-              disabled={!newUserName.trim() || !newUserEmail.trim() || newUserPassword.length < 12 || !newUserRoleId}
+              disabled={
+                !newUserName.trim() ||
+                !newUserEmail.trim() ||
+                newUserPassword.length < 12 ||
+                !newUserRoleId
+              }
               onClick={handleCreateUser}
             >
               Criar acesso
@@ -442,8 +738,19 @@ export function SettingsPage() {
           </>
         }
       >
-        <Input label="Nome" value={newUserName} onChange={(event) => setNewUserName(event.target.value)} autoComplete="off" />
-        <Input label="E-mail" type="email" value={newUserEmail} onChange={(event) => setNewUserEmail(event.target.value)} autoComplete="off" />
+        <Input
+          label="Nome"
+          value={newUserName}
+          onChange={(event) => setNewUserName(event.target.value)}
+          autoComplete="off"
+        />
+        <Input
+          label="E-mail"
+          type="email"
+          value={newUserEmail}
+          onChange={(event) => setNewUserEmail(event.target.value)}
+          autoComplete="off"
+        />
         <Input
           label="Senha provisória (mínimo 12 caracteres)"
           type="password"
@@ -453,12 +760,21 @@ export function SettingsPage() {
         />
         <div className="form-group">
           <label htmlFor="new-user-role">Perfil de acesso</label>
-          <select id="new-user-role" className="select" value={newUserRoleId} onChange={(event) => setNewUserRoleId(event.target.value)}>
+          <select
+            id="new-user-role"
+            className="select"
+            value={newUserRoleId}
+            onChange={(event) => setNewUserRoleId(event.target.value)}
+          >
             {accessRoles.map((role) => (
-              <option key={role.id} value={role.id}>{roleLabel(role.name)}</option>
+              <option key={role.id} value={role.id}>
+                {roleLabel(role.name)}
+              </option>
             ))}
           </select>
-          <p className="text-xs text-secondary">{accessRoles.find((role) => role.id === newUserRoleId)?.description}</p>
+          <p className="text-xs text-secondary">
+            {accessRoles.find((role) => role.id === newUserRoleId)?.description}
+          </p>
         </div>
       </Modal>
 
@@ -468,8 +784,14 @@ export function SettingsPage() {
         title={`Redefinir senha — ${resetUser?.name ?? ''}`}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setResetUser(null)}>Cancelar</Button>
-            <Button loading={userSaving} disabled={resetUserPassword.length < 12} onClick={handleResetUserPassword}>
+            <Button variant="secondary" onClick={() => setResetUser(null)}>
+              Cancelar
+            </Button>
+            <Button
+              loading={userSaving}
+              disabled={resetUserPassword.length < 12}
+              onClick={handleResetUserPassword}
+            >
               Salvar nova senha
             </Button>
           </>
@@ -486,12 +808,74 @@ export function SettingsPage() {
           autoComplete="new-password"
         />
       </Modal>
+
+      <Modal
+        open={editSender !== null}
+        onClose={() => setEditSender(null)}
+        title={`Editar número — ${editSender?.displayPhoneNumber ?? ''}`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditSender(null)}>
+              Cancelar
+            </Button>
+            <Button
+              loading={senderSaving}
+              disabled={!editSenderName.trim()}
+              onClick={async () => {
+                if (!editSender) return;
+                await patchSender(
+                  editSender.id,
+                  { internalName: editSenderName.trim() },
+                  'Nome interno atualizado.',
+                );
+                setEditSender(null);
+              }}
+            >
+              Salvar nome interno
+            </Button>
+          </>
+        }
+      >
+        <Input
+          label="Nome para identificar dentro do CRM"
+          value={editSenderName}
+          onChange={(event) => setEditSenderName(event.target.value)}
+          placeholder="Ex.: Meteórico principal"
+        />
+        <p className="text-sm text-secondary">
+          Isso não altera o nome público “{editSender?.verifiedName || 'em análise'}”. Esse nome só
+          pode ser alterado e aprovado no Gerenciador do WhatsApp da Meta.
+        </p>
+      </Modal>
+
+      <ConfirmDialog
+        open={confirmEnableSender !== null}
+        onCancel={() => setConfirmEnableSender(null)}
+        onConfirm={() => {
+          if (confirmEnableSender) {
+            patchSender(
+              confirmEnableSender.id,
+              { sendEnabled: true },
+              'Número liberado para campanhas.',
+            );
+          }
+          setConfirmEnableSender(null);
+        }}
+        title="Liberar este número para envios?"
+        message={`Confirme que ${confirmEnableSender?.displayPhoneNumber ?? 'o número'} já aparece como Conectado na Meta. O CRM não fará envios por ele enquanto estiver bloqueado.`}
+        confirmLabel="Liberar número"
+      />
     </div>
   );
 }
 
 function StatusText({ label, value }: { label: string; value: string }) {
-  return <div><p className="text-xs text-secondary">{label}</p><p className="font-semibold">{value}</p></div>;
+  return (
+    <div>
+      <p className="text-xs text-secondary">{label}</p>
+      <p className="font-semibold">{value}</p>
+    </div>
+  );
 }
 
 function roleLabel(role: string) {

@@ -16,13 +16,55 @@ beforeEach(() => {
     const url = String(input);
     if (url.endsWith('/api/settings')) return response([]);
     if (url.endsWith('/api/followup/system-status')) {
-      return response({ provider: 'meta', outboundEnabled: true, graphVersion: 'v25.0', metaConfigured: true, n8nConfigured: true, approvedTemplates: 2, requiredTemplates: 2 });
+      return response({
+        provider: 'meta',
+        outboundEnabled: true,
+        graphVersion: 'v25.0',
+        metaConfigured: true,
+        n8nConfigured: true,
+        approvedTemplates: 2,
+        requiredTemplates: 2,
+      });
+    }
+    if (url.endsWith('/api/whatsapp/senders')) {
+      return response({
+        senders: [
+          {
+            id: 'sender-1',
+            phoneNumberId: 'phone-1',
+            displayPhoneNumber: '+55 91 92008-6884',
+            verifiedName: 'Meteorico',
+            internalName: 'Principal',
+            status: 'CONNECTED',
+            qualityRating: 'GREEN',
+            codeVerificationStatus: 'VERIFIED',
+            isDefault: true,
+            isActive: true,
+            sendEnabled: true,
+            lastSyncedAt: null,
+          },
+        ],
+      });
     }
     if (url.endsWith('/api/users/roles')) {
-      return response({ roles: [{ id: 'role-1', name: 'operator', description: 'Opera campanhas' }] });
+      return response({
+        roles: [{ id: 'role-1', name: 'operator', description: 'Opera campanhas' }],
+      });
     }
     if (url.endsWith('/api/users')) {
-      return response({ users: [{ id: 'owner-1', name: 'Administrador', email: 'admin@test.dev', isActive: true, lastLoginAt: null, createdAt: '2026-08-31T00:00:00Z', role: { id: 'owner-role', name: 'owner', description: '' } }] });
+      return response({
+        users: [
+          {
+            id: 'owner-1',
+            name: 'Administrador',
+            email: 'admin@test.dev',
+            isActive: true,
+            lastLoginAt: null,
+            createdAt: '2026-08-31T00:00:00Z',
+            role: { id: 'owner-role', name: 'owner', description: '' },
+          },
+        ],
+      });
     }
     return response({});
   }) as typeof fetch;

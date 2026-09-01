@@ -61,15 +61,18 @@ export async function uploadTemplateHeaderSample(image: TemplateHeaderImage): Pr
   return uploaded.h;
 }
 
-export async function uploadWhatsAppImage(image: TemplateHeaderImage): Promise<string> {
+export async function uploadWhatsAppImage(
+  image: TemplateHeaderImage,
+  phoneNumberId?: string,
+): Promise<string> {
   const token = requiredEnv('META_WHATSAPP_ACCESS_TOKEN');
-  const phoneNumberId = requiredEnv('META_WHATSAPP_PHONE_NUMBER_ID');
+  const resolvedPhoneNumberId = phoneNumberId || requiredEnv('META_WHATSAPP_PHONE_NUMBER_ID');
   const version = process.env.META_GRAPH_API_VERSION?.trim() || 'v26.0';
   const form = new FormData();
   form.append('messaging_product', 'whatsapp');
   form.append('file', new Blob([image.data], { type: image.mimeType }), image.fileName);
   const response = await fetch(
-    `https://graph.facebook.com/${version}/${phoneNumberId}/media`,
+    `https://graph.facebook.com/${version}/${resolvedPhoneNumberId}/media`,
     {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },

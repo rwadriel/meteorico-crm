@@ -14,6 +14,7 @@ import {
   refreshFollowupCampaignMetrics,
   validateFollowupCampaignWithDb,
 } from '../services/followup.js';
+import { resolveWhatsAppSender, WhatsAppSenderError } from '../services/whatsapp-sender.js';
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(160),
@@ -21,6 +22,7 @@ const createSchema = z.object({
   offerUrl: z.string().trim().max(2048).optional().nullable(),
   templateParameters: z.array(z.string().trim().min(1).max(2048)).max(10).optional(),
   audienceListId: z.string().uuid(),
+  senderId: z.string().uuid().optional().nullable(),
   scheduledAt: z.string().datetime().optional().nullable(),
   batchSize: z.coerce.number().int().min(1).max(25).default(5),
   batchIntervalSeconds: z.coerce.number().int().min(10).max(300).default(60),
@@ -84,7 +86,17 @@ export async function followupRoutes(app: FastifyInstance) {
     const query = listSchema.parse(request.query);
     const [campaigns, total] = await Promise.all([
       db.followupCampaign.findMany({
-        include: { audienceList: { select: { id: true, name: true } } },
+        include: {
+          audienceList: { select: { id: true, name: true } },
+          sender: {
+            select: {
+              id: true,
+              internalName: true,
+              displayPhoneNumber: true,
+              verifiedName: true,
+            },
+          },
+        },
         orderBy: { createdAt: 'desc' },
         skip: (query.page - 1) * query.limit,
         take: query.limit,
@@ -99,6 +111,14 @@ export async function followupRoutes(app: FastifyInstance) {
     const campaign = await db.followupCampaign.findUnique({
       where: { id },
       include: {
+        sender: {
+          select: {
+            id: true,
+            internalName: true,
+            displayPhoneNumber: true,
+            verifiedName: true,
+          },
+        },
         messages: {
           orderBy: { createdAt: 'desc' },
           take: 100,
@@ -122,6 +142,15 @@ export async function followupRoutes(app: FastifyInstance) {
   app.post('/followup/campaigns', { preHandler: create }, async (request, reply) => {
     const input = createSchema.parse(request.body);
     const { parameters, template, offerUrl } = await validateFollowupCampaignWithDb(db, input);
+    let sender;
+    try {
+      sender = await resolveWhatsAppSender(db, input.senderId);
+    } catch (error) {
+      if (error instanceof WhatsAppSenderError) {
+        return reply.status(error.statusCode).send({ message: error.message });
+      }
+      throw error;
+    }
     const audience = await db.contactList.findFirst({
       where: { id: input.audienceListId, isActive: true },
       select: { id: true, name: true },
@@ -136,6 +165,7 @@ export async function followupRoutes(app: FastifyInstance) {
         offerUrl,
         templateParameters: parameters as unknown as Prisma.InputJsonValue,
         audienceListId: audience.id,
+        senderId: sender.id,
         scheduledAt: input.scheduledAt ? new Date(input.scheduledAt) : null,
         batchSize: input.batchSize,
         batchIntervalSeconds: input.batchIntervalSeconds,
@@ -152,6 +182,7 @@ export async function followupRoutes(app: FastifyInstance) {
         name: campaign.name,
         templateName: campaign.templateName,
         audienceListId: audience.id,
+        senderId: sender.id,
         scheduledAt: campaign.scheduledAt,
         batchSize: campaign.batchSize,
         batchIntervalSeconds: campaign.batchIntervalSeconds,
@@ -167,6 +198,14 @@ export async function followupRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const campaign = await db.followupCampaign.findUnique({ where: { id } });
     if (!campaign) return reply.status(404).send({ message: 'Campanha não encontrada' });
+    try {
+      await resolveWhatsAppSender(db, campaign.senderId);
+    } catch (error) {
+      if (error instanceof WhatsAppSenderError) {
+        return reply.status(error.statusCode).send({ message: error.message });
+      }
+      throw error;
+    }
     await validateFollowupCampaignWithDb(db, campaign);
     if (!campaign.audienceListId) {
       return reply.status(409).send({ message: 'Escolha um público para a campanha' });
@@ -198,10 +237,11 @@ export async function followupRoutes(app: FastifyInstance) {
     }
     try {
       await validateFollowupCampaignWithDb(db, current);
+      await resolveWhatsAppSender(db, current.senderId);
     } catch (error) {
       return reply
         .status(409)
-        .send({ message: error instanceof Error ? error.message : 'Template inválido' });
+        .send({ message: error instanceof Error ? error.message : 'Campanha inválida' });
     }
     if (process.env.WHATSAPP_OUTBOUND_ENABLED !== 'true') {
       return reply.status(409).send({ message: 'Envio real está desativado. Use o Modo Teste.' });
