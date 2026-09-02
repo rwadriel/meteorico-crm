@@ -80,7 +80,7 @@ export function LoginPage() {
           </button>
         </form>
 
-        <div className="login-footer">Meteórico CRM v0.12.1</div>
+        <div className="login-footer">Meteórico CRM v0.12.2</div>
       </div>
     </div>
   );

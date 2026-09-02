@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Badge, Button, ConfirmDialog, Input, Modal, Table } from '../components/index.js';
+import {
+  Alert,
+  Badge,
+  Button,
+  ConfirmDialog,
+  EmptyState,
+  Input,
+  Modal,
+} from '../components/index.js';
 
 const API = import.meta.env.VITE_API_URL ?? '';
 
@@ -311,92 +319,6 @@ export function FollowupCampaignsPage() {
     }
   }
 
-  const columns = [
-    { key: 'name', header: 'Nome' },
-    { key: 'templateName', header: 'Template' },
-    {
-      key: 'audienceList',
-      header: 'Público',
-      render: (campaign: FollowupCampaign) => campaign.audienceList?.name ?? 'Base geral (legado)',
-    },
-    {
-      key: 'sender',
-      header: 'Remetente',
-      render: (campaign: FollowupCampaign) =>
-        campaign.sender
-          ? `${campaign.sender.internalName || campaign.sender.verifiedName} · ${campaign.sender.displayPhoneNumber}`
-          : 'Número padrão (legado)',
-    },
-    {
-      key: 'status',
-      header: 'Status',
-      render: (campaign: FollowupCampaign) => (
-        <Badge variant={STATUS_VARIANTS[campaign.status] ?? 'neutral'}>
-          {STATUS_LABELS[campaign.status] ?? campaign.status}
-        </Badge>
-      ),
-    },
-    { key: 'eligibleContacts', header: 'Elegíveis' },
-    { key: 'submittedCount', header: 'Submetidas' },
-    { key: 'deliveredCount', header: 'Entregues' },
-    { key: 'readCount', header: 'Lidas' },
-    {
-      key: 'uniqueClickCount',
-      header: 'Cliques',
-      render: (campaign: FollowupCampaign) =>
-        `${campaign.uniqueClickCount} únicos · ${campaign.clickCount} totais`,
-    },
-    {
-      key: 'clickRate',
-      header: 'CTR',
-      render: (campaign: FollowupCampaign) =>
-        campaign.deliveredCount > 0
-          ? `${((campaign.uniqueClickCount / campaign.deliveredCount) * 100).toFixed(1)}%`
-          : '0%',
-    },
-    { key: 'repliedCount', header: 'Respostas' },
-    { key: 'optOutCount', header: 'Opt-outs' },
-    {
-      key: 'actions',
-      header: 'Ações',
-      render: (campaign: FollowupCampaign) => (
-        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-          {['draft', 'ready'].includes(campaign.status) && (
-            <Button size="sm" variant="secondary" onClick={() => action(campaign, 'dry-run')}>
-              Modo Teste
-            </Button>
-          )}
-          {['draft', 'ready'].includes(campaign.status) && (
-            <Button size="sm" onClick={() => setConfirmStart(campaign)}>
-              Iniciar
-            </Button>
-          )}
-          {campaign.status === 'running' && (
-            <Button size="sm" variant="secondary" onClick={() => action(campaign, 'pause')}>
-              Pausar
-            </Button>
-          )}
-          {campaign.status === 'paused' && (
-            <Button size="sm" onClick={() => action(campaign, 'resume')}>
-              Continuar
-            </Button>
-          )}
-          {['draft', 'ready', 'scheduled', 'running', 'paused'].includes(campaign.status) && (
-            <Button size="sm" variant="danger" onClick={() => setConfirmCancel(campaign)}>
-              Cancelar
-            </Button>
-          )}
-          <a
-            className="btn btn-secondary btn-sm"
-            href={`${API}/api/followup/campaigns/${campaign.id}/export.csv`}
-          >
-            Exportar CSV
-          </a>
-        </div>
-      ),
-    },
-  ];
-
   return (
     <div>
       <div className="content-header">
@@ -435,17 +357,102 @@ export function FollowupCampaignsPage() {
         </div>
       )}
 
-      <div className="card">
+      <section className="campaign-list-panel" aria-label="Campanhas de WhatsApp">
         {loading ? (
-          <div style={{ padding: '2rem', textAlign: 'center' }}>Carregando...</div>
+          <div className="campaign-list-loading">Carregando...</div>
+        ) : campaigns.length === 0 ? (
+          <EmptyState title="Nenhuma campanha de follow-up criada" />
         ) : (
-          <Table
-            columns={columns}
-            data={campaigns}
-            emptyMessage="Nenhuma campanha de follow-up criada"
-          />
+          <div className="campaign-list">
+            {campaigns.map((campaign) => (
+              <article className="campaign-record" key={campaign.id}>
+                <header className="campaign-record-header">
+                  <div className="campaign-record-title">
+                    <span className="campaign-record-kicker">Campanha</span>
+                    <h2>{campaign.name}</h2>
+                    <p>{campaign.templateName}</p>
+                  </div>
+                  <Badge variant={STATUS_VARIANTS[campaign.status] ?? 'neutral'}>
+                    {STATUS_LABELS[campaign.status] ?? campaign.status}
+                  </Badge>
+                </header>
+
+                <div className="campaign-record-context">
+                  <div>
+                    <span>Público</span>
+                    <strong>{campaign.audienceList?.name ?? 'Base geral (legado)'}</strong>
+                  </div>
+                  <div>
+                    <span>Remetente</span>
+                    <strong>
+                      {campaign.sender
+                        ? `${campaign.sender.internalName || campaign.sender.verifiedName} · ${campaign.sender.displayPhoneNumber}`
+                        : 'Número padrão (legado)'}
+                    </strong>
+                  </div>
+                </div>
+
+                <div className="campaign-record-metrics">
+                  <CampaignMetric label="Elegíveis" value={campaign.eligibleContacts} />
+                  <CampaignMetric label="Submetidas" value={campaign.submittedCount} />
+                  <CampaignMetric label="Enviadas" value={campaign.sentCount} />
+                  <CampaignMetric label="Entregues" value={campaign.deliveredCount} />
+                  <CampaignMetric label="Lidas" value={campaign.readCount} />
+                  <CampaignMetric
+                    label="Cliques"
+                    value={campaign.uniqueClickCount}
+                    detail={`${campaign.clickCount} totais`}
+                  />
+                  <CampaignMetric label="CTR" value={campaignClickRate(campaign)} />
+                  <CampaignMetric label="Respostas" value={campaign.repliedCount} />
+                  <CampaignMetric label="Opt-outs" value={campaign.optOutCount} />
+                  <CampaignMetric label="Falhas" value={campaign.failedCount} />
+                </div>
+
+                <footer className="campaign-record-actions">
+                  {['draft', 'ready'].includes(campaign.status) && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => action(campaign, 'dry-run')}
+                    >
+                      Modo Teste
+                    </Button>
+                  )}
+                  {['draft', 'ready'].includes(campaign.status) && (
+                    <Button size="sm" onClick={() => setConfirmStart(campaign)}>
+                      Iniciar
+                    </Button>
+                  )}
+                  {campaign.status === 'running' && (
+                    <Button size="sm" variant="secondary" onClick={() => action(campaign, 'pause')}>
+                      Pausar
+                    </Button>
+                  )}
+                  {campaign.status === 'paused' && (
+                    <Button size="sm" onClick={() => action(campaign, 'resume')}>
+                      Continuar
+                    </Button>
+                  )}
+                  {['draft', 'ready', 'scheduled', 'running', 'paused'].includes(
+                    campaign.status,
+                  ) && (
+                    <Button size="sm" variant="danger" onClick={() => setConfirmCancel(campaign)}>
+                      Cancelar
+                    </Button>
+                  )}
+                  <a
+                    className="btn btn-secondary btn-sm"
+                    href={`${API}/api/followup/campaigns/${campaign.id}/export.csv`}
+                  >
+                    Exportar relatório
+                  </a>
+                </footer>
+              </article>
+            ))}
+          </div>
         )}
-      </div>
+      </section>
 
       <Modal
         open={showCreate}
@@ -707,6 +714,29 @@ function Metric({ label, value }: { label: string; value: number }) {
       <p className="text-2xl font-bold">{value}</p>
     </div>
   );
+}
+
+function CampaignMetric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: number | string;
+  detail?: string;
+}) {
+  return (
+    <div className="campaign-record-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {detail && <small>{detail}</small>}
+    </div>
+  );
+}
+
+function campaignClickRate(campaign: FollowupCampaign) {
+  if (campaign.deliveredCount === 0) return '0%';
+  return `${((campaign.uniqueClickCount / campaign.deliveredCount) * 100).toFixed(1)}%`;
 }
 
 async function responseMessage(response: Response): Promise<string> {
