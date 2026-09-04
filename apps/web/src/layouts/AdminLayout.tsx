@@ -114,7 +114,7 @@ export function AdminLayout(): React.ReactElement {
           </button>
           <Breadcrumbs />
           <div className="topbar-right">
-            <span className="topbar-version">v0.13.1</span>
+            <span className="topbar-version">v0.13.2</span>
           </div>
         </header>
 

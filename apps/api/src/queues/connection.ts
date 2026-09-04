@@ -6,8 +6,9 @@ export function getRedisConnection(): Redis {
   if (!connection) {
     const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
     connection = new Redis(url, {
-      maxRetriesPerRequest: null,
+      maxRetriesPerRequest: 1,
       enableReadyCheck: false,
+      connectTimeout: 5000,
     });
   }
   return connection;

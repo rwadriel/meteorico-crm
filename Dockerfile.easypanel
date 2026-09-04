@@ -20,6 +20,7 @@ RUN pnpm --filter @meteorico/shared run build && \
     pnpm --filter @meteorico/database run generate && \
     pnpm --filter @meteorico/database run build && \
     pnpm --filter @meteorico/api run build && \
+    pnpm --filter @meteorico/worker run build && \
     pnpm --filter @meteorico/ui run build && \
     pnpm --filter @meteorico/web run build
 
@@ -33,6 +34,17 @@ EXPOSE 4080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:4080/health || exit 1
 CMD ["node", "apps/api/dist/server.js"]
+
+FROM base AS worker
+RUN addgroup -g 1001 -S meteorico && adduser -S meteorico -u 1001
+WORKDIR /app
+COPY --from=build --chown=meteorico:meteorico /app .
+USER meteorico
+ENV NODE_ENV=production
+EXPOSE 4081
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:4081/ || exit 1
+CMD ["node", "apps/worker/dist/main.js"]
 
 FROM nginx:alpine AS web
 RUN sed -i 's|^pid .*;|pid /tmp/nginx.pid;|' /etc/nginx/nginx.conf && \

@@ -67,6 +67,7 @@ export function ConversationsPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const pendingReplyKeyRef = useRef('');
 
   const loadConversations = useCallback(
     async (silent = false) => {
@@ -176,14 +177,19 @@ export function ConversationsPage() {
     setError('');
     setNotice('');
     try {
+      const idempotencyKey = pendingReplyKeyRef.current
+        || `manual:web:${selected.id}:${crypto.randomUUID()}`;
+      pendingReplyKeyRef.current = idempotencyKey;
       const response = await fetch(`${API}/api/messaging/conversations/${selected.id}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ content, messageType: 'text' }),
+        signal: AbortSignal.timeout(15000),
+        body: JSON.stringify({ content, messageType: 'text', idempotencyKey }),
       });
       const body = (await response.json().catch(() => ({}))) as { message?: string };
       if (!response.ok) throw new Error(body.message ?? 'Não foi possível enviar a resposta.');
+      pendingReplyKeyRef.current = '';
       setReplyText('');
       setNotice('Resposta enviada para processamento.');
       window.setTimeout(() => {
@@ -191,7 +197,13 @@ export function ConversationsPage() {
         void loadConversations(true);
       }, 1200);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Erro ao enviar resposta.');
+      setError(
+        cause instanceof DOMException && cause.name === 'TimeoutError'
+          ? 'O envio demorou demais. Tente novamente; a proteção contra duplicidade está ativa.'
+          : cause instanceof Error
+            ? cause.message
+            : 'Erro ao enviar resposta.',
+      );
     } finally {
       setSending(false);
     }

@@ -588,7 +588,7 @@ O sistema permite classificar, simular a classificação e aplicar override manu
 - estados e tentativas persistidas;
 - filas BullMQ `outbound-messages` e `integration-tasks` no modo completo da arquitetura.
 
-O Docker Compose compacto atualmente usado no EasyPanel para o follow-up não sobe Redis nem o worker BullMQ; o disparo principal em produção usa API + PostgreSQL + n8n. O código de filas e worker continua no monorepo para o modo de arquitetura completo.
+O Docker Compose do EasyPanel sobe Redis e o worker BullMQ. Respostas manuais da caixa de entrada seguem o fluxo `API -> Redis -> worker -> Meta Cloud API`, com idempotência e retentativas controladas.
 
 ### 13.5 Links genéricos e atribuição
 
