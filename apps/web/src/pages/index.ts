@@ -5,6 +5,7 @@ export { FollowupCampaignsPage } from './FollowupCampaignsPage.js';
 export { GroupsPage } from './GroupsPage.js';
 export { ContactsPage } from './ContactsPage.js';
 export { AudiencesPage } from './AudiencesPage.js';
+export { ConversationsPage } from './ConversationsPage.js';
 export { MessagesPage } from './MessagesPage.js';
 export { TemplatesPage } from './TemplatesPage.js';
 export { FlowsPage } from './FlowsPage.js';

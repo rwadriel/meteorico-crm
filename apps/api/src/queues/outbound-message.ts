@@ -11,6 +11,7 @@ export interface OutboundMessageJob {
   content: string;
   messageType: string;
   templateId?: string;
+  phoneNumberId?: string;
   idempotencyKey: string;
 }
 

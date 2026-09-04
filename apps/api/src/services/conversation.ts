@@ -98,6 +98,7 @@ export async function handleIncomingMessage(
       content: incoming.content,
       messageType: incoming.messageType,
       externalMessageId: incoming.externalMessageId,
+      senderPhoneNumberId: incoming.phoneNumberId ?? null,
       provider: provider.name,
       deliveryStatus: 'delivered',
       sentAt: new Date(incoming.timestamp),

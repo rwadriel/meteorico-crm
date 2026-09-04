@@ -3,7 +3,9 @@ import { PrismaClient } from '@meteorico/database';
 import { buildApp } from '../../app.js';
 import { hashPassword } from '../../services/auth.js';
 
-const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgresql://meteorico:meteorico_dev@localhost:5432/meteorico_crm_test';
+const TEST_DB_URL =
+  process.env.DATABASE_URL ??
+  'postgresql://meteorico:meteorico_dev@localhost:5432/meteorico_crm_test';
 
 const PERMS = [
   { resource: 'campaigns', action: 'read' },
@@ -60,13 +62,22 @@ describe('Messaging Integration', () => {
     app = await buildApp();
 
     const role = await db.role.create({
-      data: { name: `role-${crypto.randomUUID().slice(0, 8)}`, description: 'admin', isSystem: true },
+      data: {
+        name: `role-${crypto.randomUUID().slice(0, 8)}`,
+        description: 'admin',
+        isSystem: true,
+      },
     });
     for (const perm of PERMS) {
       await db.permission.create({ data: { roleId: role.id, ...perm } });
     }
     const user = await db.adminUser.create({
-      data: { email: 'msg@test.dev', passwordHash: await hashPassword('pass123'), name: 'Tester', roleId: role.id },
+      data: {
+        email: 'msg@test.dev',
+        passwordHash: await hashPassword('pass123'),
+        name: 'Tester',
+        roleId: role.id,
+      },
     });
     adminUserId = user.id;
 
@@ -75,7 +86,11 @@ describe('Messaging Integration', () => {
     });
     campaignId = campaign.id;
 
-    const loginRes = await app.inject({ method: 'POST', url: '/auth/login', payload: { email: 'msg@test.dev', password: 'pass123' } });
+    const loginRes = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email: 'msg@test.dev', password: 'pass123' },
+    });
     const cookies = loginRes.cookies as Array<{ name: string; value: string }>;
     sessionCookie = `meteorico_session=${cookies.find((c) => c.name === 'meteorico_session')!.value}`;
   });
@@ -229,6 +244,48 @@ describe('Messaging Integration', () => {
       where: { externalMessageId: 'ext-msg-dup' },
     });
     expect(messages).toHaveLength(1);
+  });
+
+  it('lists conversations and returns their message history', async () => {
+    const contact = await db.contact.create({
+      data: { phone: '5511999990003', normalizedPhone: '5511999990003', name: '' },
+    });
+    const conversation = await db.conversation.create({
+      data: { contactId: contact.id, status: 'active' },
+    });
+    await db.conversationMessage.create({
+      data: {
+        conversationId: conversation.id,
+        direction: 'inbound',
+        content: 'Pode me ajudar?',
+        externalMessageId: 'ext-inbox-1',
+        provider: 'mock',
+        deliveryStatus: 'delivered',
+      },
+    });
+
+    const listRes = await app.inject({
+      method: 'GET',
+      url: '/messaging/conversations',
+      headers: { cookie: sessionCookie },
+    });
+    expect(listRes.statusCode).toBe(200);
+    expect(listRes.json().summary).toMatchObject({ total: 1, awaitingReply: 1 });
+    expect(listRes.json().conversations[0]).toMatchObject({
+      id: conversation.id,
+      awaitingReply: true,
+      serviceWindowOpen: true,
+      contact: { phone: '5511999990003' },
+    });
+
+    const detailRes = await app.inject({
+      method: 'GET',
+      url: `/messaging/conversations/${conversation.id}`,
+      headers: { cookie: sessionCookie },
+    });
+    expect(detailRes.statusCode).toBe(200);
+    expect(detailRes.json().messages).toHaveLength(1);
+    expect(detailRes.json().messages[0].content).toBe('Pode me ajudar?');
   });
 
   it('handles delivery status webhook', async () => {

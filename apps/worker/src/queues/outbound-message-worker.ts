@@ -15,6 +15,7 @@ interface OutboundMessageJob {
   content: string;
   messageType: string;
   templateId?: string;
+  phoneNumberId?: string;
   idempotencyKey: string;
 }
 
@@ -98,7 +99,7 @@ export async function processOutboundMessage(job: Job<OutboundMessageJob>): Prom
     return;
   }
 
-  const provider = createOutboundMessagingProvider();
+  const provider = createOutboundMessagingProvider(job.data.phoneNumberId);
   const normalizedMessageType: MessagePayload['messageType'] =
     messageType === 'link' || messageType === 'interactive' ? messageType : 'text';
 
@@ -129,6 +130,7 @@ export async function processOutboundMessage(job: Job<OutboundMessageJob>): Prom
       content,
       messageType: normalizedMessageType,
       templateId: job.data.templateId ?? null,
+      senderPhoneNumberId: job.data.phoneNumberId ?? null,
       externalMessageId,
       provider: provider.name,
       deliveryStatus: 'sent',

@@ -12,6 +12,7 @@ import {
   ChevronRight,
   FileText,
   ListFilter,
+  MessageCircle,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.js';
 import { useCanAccess } from '../hooks/usePermission.js';
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
   { to: '/audiences', label: 'Públicos', icon: ListFilter, section: 'contacts' },
   { to: '/imports', label: 'Importar CSV', icon: Upload, section: 'imports' },
   { to: '/followup', label: 'Campanhas', icon: Megaphone, section: 'campaigns' },
+  { to: '/conversations', label: 'Conversas', icon: MessageCircle, section: 'messages' },
   { to: '/templates', label: 'Templates', icon: FileText, section: 'templates' },
   { to: '/settings', label: 'Configurações', icon: Settings, section: 'settings' },
 ];
@@ -112,7 +114,7 @@ export function AdminLayout(): React.ReactElement {
           </button>
           <Breadcrumbs />
           <div className="topbar-right">
-            <span className="topbar-version">v0.12.2</span>
+            <span className="topbar-version">v0.13.0</span>
           </div>
         </header>
 

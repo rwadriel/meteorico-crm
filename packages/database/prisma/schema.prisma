@@ -208,21 +208,21 @@ model FollowupCampaign {
 }
 
 model WhatsAppSender {
-  id                     String   @id @default(uuid())
-  phoneNumberId          String   @unique @map("phone_number_id")
-  wabaId                 String   @map("waba_id")
-  displayPhoneNumber     String   @default("") @map("display_phone_number")
-  verifiedName           String   @default("") @map("verified_name")
-  internalName           String   @default("") @map("internal_name")
-  status                 String   @default("PENDING")
-  qualityRating          String   @default("UNKNOWN") @map("quality_rating")
-  codeVerificationStatus String   @default("UNKNOWN") @map("code_verification_status")
-  isDefault              Boolean  @default(false) @map("is_default")
-  isActive               Boolean  @default(true) @map("is_active")
-  sendEnabled            Boolean  @default(false) @map("send_enabled")
+  id                     String    @id @default(uuid())
+  phoneNumberId          String    @unique @map("phone_number_id")
+  wabaId                 String    @map("waba_id")
+  displayPhoneNumber     String    @default("") @map("display_phone_number")
+  verifiedName           String    @default("") @map("verified_name")
+  internalName           String    @default("") @map("internal_name")
+  status                 String    @default("PENDING")
+  qualityRating          String    @default("UNKNOWN") @map("quality_rating")
+  codeVerificationStatus String    @default("UNKNOWN") @map("code_verification_status")
+  isDefault              Boolean   @default(false) @map("is_default")
+  isActive               Boolean   @default(true) @map("is_active")
+  sendEnabled            Boolean   @default(false) @map("send_enabled")
   lastSyncedAt           DateTime? @map("last_synced_at")
-  createdAt              DateTime @default(now()) @map("created_at")
-  updatedAt              DateTime @updatedAt @map("updated_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
 
   campaigns FollowupCampaign[]
 
@@ -490,23 +490,25 @@ model Conversation {
 }
 
 model ConversationMessage {
-  id                String    @id @default(uuid())
-  conversationId    String    @map("conversation_id")
-  direction         String
-  content           String
-  messageType       String    @default("text") @map("message_type")
-  templateId        String?   @map("template_id")
-  externalMessageId String?   @unique @map("external_message_id")
-  provider          String?
-  deliveryStatus    String    @default("pending") @map("delivery_status")
-  sentAt            DateTime  @default(now()) @map("sent_at")
-  deliveredAt       DateTime? @map("delivered_at")
-  readAt            DateTime? @map("read_at")
-  createdAt         DateTime  @default(now()) @map("created_at")
+  id                  String    @id @default(uuid())
+  conversationId      String    @map("conversation_id")
+  direction           String
+  content             String
+  messageType         String    @default("text") @map("message_type")
+  templateId          String?   @map("template_id")
+  externalMessageId   String?   @unique @map("external_message_id")
+  senderPhoneNumberId String?   @map("sender_phone_number_id")
+  provider            String?
+  deliveryStatus      String    @default("pending") @map("delivery_status")
+  sentAt              DateTime  @default(now()) @map("sent_at")
+  deliveredAt         DateTime? @map("delivered_at")
+  readAt              DateTime? @map("read_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
 
   conversation Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   template     MessageTemplate? @relation(fields: [templateId], references: [id])
 
+  @@index([senderPhoneNumberId])
   @@map("conversation_messages")
 }
 

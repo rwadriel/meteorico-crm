@@ -17,6 +17,169 @@ export async function messagingRoutes(app: FastifyInstance) {
   app.addHook('onRequest', requireAuth);
 
   app.get(
+    '/messaging/conversations',
+    {
+      preHandler: requirePermission('messages', 'read'),
+    },
+    async (request, reply) => {
+      const db = getClient();
+      const query = request.query as { search?: string; limit?: string };
+      const search = query.search?.trim().slice(0, 80) ?? '';
+      const requestedLimit = Number.parseInt(query.limit ?? '100', 10);
+      const limit = Number.isFinite(requestedLimit)
+        ? Math.max(10, Math.min(requestedLimit, 200))
+        : 100;
+
+      const conversations = await db.conversation.findMany({
+        where: {
+          messages: { some: {} },
+          ...(search
+            ? {
+                contact: {
+                  OR: [
+                    { name: { contains: search, mode: 'insensitive' as const } },
+                    { phone: { contains: search } },
+                    { normalizedPhone: { contains: search } },
+                  ],
+                },
+              }
+            : {}),
+        },
+        include: {
+          contact: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              normalizedPhone: true,
+              preferences: {
+                where: { channel: 'whatsapp' },
+                select: { optedOut: true },
+                take: 1,
+              },
+            },
+          },
+          participation: {
+            select: { campaign: { select: { id: true, name: true } } },
+          },
+          messages: {
+            orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
+            take: 1,
+          },
+          _count: { select: { messages: true } },
+        },
+        take: 500,
+        orderBy: { startedAt: 'desc' },
+      });
+
+      const conversationIds = conversations.map((conversation) => conversation.id);
+      const inboundTimes =
+        conversationIds.length === 0
+          ? []
+          : await db.conversationMessage.groupBy({
+              by: ['conversationId'],
+              where: { conversationId: { in: conversationIds }, direction: 'inbound' },
+              _max: { sentAt: true },
+            });
+      const lastInboundByConversation = new Map(
+        inboundTimes.map((entry) => [entry.conversationId, entry._max.sentAt]),
+      );
+
+      const ordered = conversations
+        .map((conversation) => {
+          const lastMessage = conversation.messages[0] ?? null;
+          const lastInboundAt = lastInboundByConversation.get(conversation.id) ?? null;
+          return {
+            id: conversation.id,
+            status: conversation.status,
+            startedAt: conversation.startedAt,
+            contact: {
+              id: conversation.contact.id,
+              name: conversation.contact.name,
+              phone: conversation.contact.normalizedPhone ?? conversation.contact.phone ?? '',
+              optedOut: conversation.contact.preferences[0]?.optedOut ?? false,
+            },
+            campaign: conversation.participation?.campaign ?? null,
+            lastMessage,
+            messageCount: conversation._count.messages,
+            awaitingReply: lastMessage?.direction === 'inbound',
+            ...serviceWindowState(lastInboundAt),
+          };
+        })
+        .sort(
+          (left, right) =>
+            new Date(right.lastMessage?.sentAt ?? right.startedAt).getTime() -
+            new Date(left.lastMessage?.sentAt ?? left.startedAt).getTime(),
+        )
+        .slice(0, limit);
+
+      return reply.send({
+        conversations: ordered,
+        summary: {
+          total: ordered.length,
+          awaitingReply: ordered.filter((conversation) => conversation.awaitingReply).length,
+        },
+      });
+    },
+  );
+
+  app.get<{
+    Params: { conversationId: string };
+  }>(
+    '/messaging/conversations/:conversationId',
+    {
+      preHandler: requirePermission('messages', 'read'),
+    },
+    async (request, reply) => {
+      const db = getClient();
+      const conversation = await db.conversation.findUnique({
+        where: { id: request.params.conversationId },
+        include: {
+          contact: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              normalizedPhone: true,
+              preferences: {
+                where: { channel: 'whatsapp' },
+                select: { optedOut: true },
+                take: 1,
+              },
+            },
+          },
+          participation: {
+            select: { campaign: { select: { id: true, name: true } } },
+          },
+          assignee: { select: { id: true, name: true } },
+          messages: {
+            orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
+            take: 200,
+          },
+        },
+      });
+      if (!conversation) return reply.status(404).send({ message: 'Conversa não encontrada.' });
+
+      const lastInbound = conversation.messages.find((message) => message.direction === 'inbound');
+      return reply.send({
+        id: conversation.id,
+        status: conversation.status,
+        startedAt: conversation.startedAt,
+        contact: {
+          id: conversation.contact.id,
+          name: conversation.contact.name,
+          phone: conversation.contact.normalizedPhone ?? conversation.contact.phone ?? '',
+          optedOut: conversation.contact.preferences[0]?.optedOut ?? false,
+        },
+        campaign: conversation.participation?.campaign ?? null,
+        assignee: conversation.assignee,
+        messages: conversation.messages.reverse(),
+        ...serviceWindowState(lastInbound?.sentAt ?? null),
+      });
+    },
+  );
+
+  app.get(
     '/messaging/redirect-links',
     {
       preHandler: requirePermission('messages', 'read'),
@@ -290,6 +453,26 @@ export async function messagingRoutes(app: FastifyInstance) {
         });
       }
 
+      const lastInbound = await db.conversationMessage.findFirst({
+        where: { conversationId: conversation.id, direction: 'inbound' },
+        orderBy: { sentAt: 'desc' },
+        select: { sentAt: true, senderPhoneNumberId: true },
+      });
+      if ((process.env.WHATSAPP_PRIVATE_PROVIDER ?? 'mock').toLowerCase() === 'meta_cloud') {
+        if (!serviceWindowState(lastInbound?.sentAt ?? null).serviceWindowOpen) {
+          const record = await db.outboundRecord.create({
+            data: { ...baseRecord, status: 'blocked', lastError: 'service_window_closed' },
+          });
+          return reply.status(409).send({
+            outboundRecordId: record.id,
+            status: 'blocked',
+            error: 'CUSTOMER_SERVICE_WINDOW_CLOSED',
+            message:
+              'A janela de atendimento está fechada. Inicie uma nova conversa com um template aprovado.',
+          });
+        }
+      }
+
       const phone = conversation.contact.normalizedPhone ?? conversation.contact.phone ?? '';
       try {
         assertStagingRecipientAllowed(
@@ -317,6 +500,7 @@ export async function messagingRoutes(app: FastifyInstance) {
           campaignId: conversation.participation?.campaignId,
           content,
           messageType: request.body.messageType ?? 'text',
+          phoneNumberId: lastInbound?.senderPhoneNumberId ?? undefined,
           idempotencyKey,
         });
         return reply.status(202).send({
@@ -334,4 +518,17 @@ export async function messagingRoutes(app: FastifyInstance) {
       }
     },
   );
+}
+
+const CUSTOMER_SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function serviceWindowState(lastInboundAt: Date | null) {
+  const expiresAt = lastInboundAt
+    ? new Date(lastInboundAt.getTime() + CUSTOMER_SERVICE_WINDOW_MS)
+    : null;
+  return {
+    lastInboundAt,
+    serviceWindowOpen: expiresAt !== null && expiresAt.getTime() > Date.now(),
+    serviceWindowExpiresAt: expiresAt,
+  };
 }

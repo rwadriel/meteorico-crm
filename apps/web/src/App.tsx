@@ -19,6 +19,7 @@ import {
   PrivacyPolicyPage,
   FollowupCampaignsPage,
   AudiencesPage,
+  ConversationsPage,
 } from './pages/index.js';
 
 function LoginGuard() {
@@ -61,6 +62,7 @@ export function App() {
             <Route path="groups" element={<GroupsPage />} />
             <Route path="contacts" element={<ContactsPage />} />
             <Route path="audiences" element={<AudiencesPage />} />
+            <Route path="conversations" element={<ConversationsPage />} />
             <Route path="messages" element={<MessagesPage />} />
             <Route path="templates" element={<TemplatesPage />} />
             <Route path="flows" element={<FlowsPage />} />

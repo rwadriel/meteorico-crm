@@ -35,7 +35,7 @@ class WorkerMockMessagingProvider implements MessagingProvider {
   }
 }
 
-export function createOutboundMessagingProvider(): MessagingProvider {
+export function createOutboundMessagingProvider(phoneNumberId?: string): MessagingProvider {
   const provider = (process.env.WHATSAPP_PRIVATE_PROVIDER ?? 'mock').toLowerCase();
   if (provider === 'mock') return new WorkerMockMessagingProvider();
   if (provider !== 'meta_cloud') {
@@ -44,7 +44,7 @@ export function createOutboundMessagingProvider(): MessagingProvider {
 
   return new MetaCloudWhatsAppProvider({
     accessToken: requireEnv('META_WHATSAPP_ACCESS_TOKEN'),
-    phoneNumberId: requireEnv('META_WHATSAPP_PHONE_NUMBER_ID'),
+    phoneNumberId: phoneNumberId?.trim() || requireEnv('META_WHATSAPP_PHONE_NUMBER_ID'),
     wabaId: requireEnv('META_WHATSAPP_WABA_ID'),
     appSecret: process.env.META_APP_SECRET ?? '',
     graphApiVersion: process.env.META_GRAPH_API_VERSION ?? 'v25.0',
