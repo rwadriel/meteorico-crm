@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCheck, Clock3, MessageCircle, RefreshCw, Search, Send } from 'lucide-react';
+import {
+  CheckCheck,
+  Clock3,
+  ExternalLink,
+  MessageCircle,
+  RefreshCw,
+  Search,
+  Send,
+} from 'lucide-react';
 import { Alert, Badge, Button } from '../components/index.js';
 
 const API = import.meta.env.VITE_API_URL ?? '';
@@ -286,6 +294,9 @@ export function ConversationsPage() {
                       <strong>{contactLabel(conversation.contact)}</strong>
                       <time>{formatCompactDate(conversation.lastMessage?.sentAt)}</time>
                     </span>
+                    <span className="inbox-conversation-phone">
+                      {formatPhone(conversation.contact.phone)}
+                    </span>
                     <span className="inbox-conversation-line">
                       <span className="inbox-conversation-preview">
                         {conversation.lastMessage?.direction === 'outbound' ? 'Você: ' : ''}
@@ -317,7 +328,16 @@ export function ConversationsPage() {
               <header className="inbox-thread-header">
                 <div>
                   <strong>{contactLabel(selected.contact)}</strong>
-                  <span>{formatPhone(selected.contact.phone)}</span>
+                  <a
+                    className="inbox-whatsapp-link"
+                    href={whatsappContactUrl(selected.contact.phone)}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Abrir contato no WhatsApp"
+                  >
+                    {formatPhone(selected.contact.phone)}
+                    <ExternalLink size={12} aria-hidden="true" />
+                  </a>
                 </div>
                 <div className="inbox-thread-badges">
                   {selected.campaign && <Badge variant="neutral">{selected.campaign.name}</Badge>}
@@ -408,6 +428,10 @@ function formatPhone(phone: string) {
     return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 8)}-${digits.slice(8)}`;
   }
   return phone || 'Contato sem telefone';
+}
+
+function whatsappContactUrl(phone: string) {
+  return `https://wa.me/${phone.replace(/\D/g, '')}`;
 }
 
 function formatCompactDate(value?: string) {

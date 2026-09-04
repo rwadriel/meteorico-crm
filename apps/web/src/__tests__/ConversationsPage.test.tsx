@@ -24,7 +24,7 @@ describe('ConversationsPage', () => {
       startedAt: now,
       contact: {
         id: 'contact-1',
-        name: '',
+        name: 'Contato 5400',
         phone: '5591991585400',
         optedOut: false,
       },
@@ -79,10 +79,13 @@ describe('ConversationsPage', () => {
 
     expect(await screen.findByText('Tenho uma dúvida')).toBeDefined();
     await waitFor(() => {
-      expect(screen.getAllByText('+55 (91) 99158-5400')).toHaveLength(3);
+      expect(screen.getAllByText('+55 (91) 99158-5400')).toHaveLength(2);
     });
+    expect(screen.getByTitle('Abrir contato no WhatsApp').getAttribute('href')).toBe(
+      'https://wa.me/5591991585400',
+    );
 
-    await user.click(screen.getByRole('button', { name: /Tenho uma dúvida/ }));
+    await user.click(screen.getByRole('button', { name: /Contato 5400/ }));
     await waitFor(() => {
       expect(fetchMock.mock.calls.some((call) =>
         String(call[0]).endsWith('/messaging/conversations/conversation-1/read')

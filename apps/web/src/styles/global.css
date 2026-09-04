@@ -2246,6 +2246,13 @@ body {
   white-space: nowrap;
 }
 
+.inbox-conversation-phone {
+  display: block;
+  margin: 0.12rem 0 0.22rem;
+  color: var(--text-secondary);
+  font-size: 0.61rem;
+}
+
 .inbox-conversation-line i {
   flex: 0 0 auto;
   width: 0.45rem;
@@ -2334,6 +2341,21 @@ body {
   margin-top: 0.15rem;
   color: var(--text-secondary);
   font-size: 0.63rem;
+}
+
+.inbox-thread-header .inbox-whatsapp-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  margin-top: 0.15rem;
+  color: var(--accent);
+  font-size: 0.66rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.inbox-thread-header .inbox-whatsapp-link:hover {
+  text-decoration: underline;
 }
 
 .inbox-thread-badges {
