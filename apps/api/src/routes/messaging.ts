@@ -81,8 +81,23 @@ export async function messagingRoutes(app: FastifyInstance) {
               where: { conversationId: { in: conversationIds }, direction: 'inbound' },
               _max: { sentAt: true },
             });
+      const unreadInboundCounts =
+        conversationIds.length === 0
+          ? []
+          : await db.conversationMessage.groupBy({
+              by: ['conversationId'],
+              where: {
+                conversationId: { in: conversationIds },
+                direction: 'inbound',
+                readAt: null,
+              },
+              _count: { _all: true },
+            });
       const lastInboundByConversation = new Map(
         inboundTimes.map((entry) => [entry.conversationId, entry._max.sentAt]),
+      );
+      const unreadByConversation = new Map(
+        unreadInboundCounts.map((entry) => [entry.conversationId, entry._count._all]),
       );
 
       const ordered = conversations
@@ -103,6 +118,8 @@ export async function messagingRoutes(app: FastifyInstance) {
             lastMessage,
             messageCount: conversation._count.messages,
             awaitingReply: lastMessage?.direction === 'inbound',
+            unreadCount: unreadByConversation.get(conversation.id) ?? 0,
+            unread: (unreadByConversation.get(conversation.id) ?? 0) > 0,
             ...serviceWindowState(lastInboundAt),
           };
         })
@@ -118,6 +135,7 @@ export async function messagingRoutes(app: FastifyInstance) {
         summary: {
           total: ordered.length,
           awaitingReply: ordered.filter((conversation) => conversation.awaitingReply).length,
+          unread: ordered.filter((conversation) => conversation.unread).length,
         },
       });
     },
@@ -176,6 +194,34 @@ export async function messagingRoutes(app: FastifyInstance) {
         messages: conversation.messages.reverse(),
         ...serviceWindowState(lastInbound?.sentAt ?? null),
       });
+    },
+  );
+
+  app.patch<{
+    Params: { conversationId: string };
+  }>(
+    '/messaging/conversations/:conversationId/read',
+    {
+      preHandler: requirePermission('messages', 'update'),
+    },
+    async (request, reply) => {
+      const db = getClient();
+      const conversation = await db.conversation.findUnique({
+        where: { id: request.params.conversationId },
+        select: { id: true },
+      });
+      if (!conversation) return reply.status(404).send({ message: 'Conversa não encontrada.' });
+
+      const result = await db.conversationMessage.updateMany({
+        where: {
+          conversationId: conversation.id,
+          direction: 'inbound',
+          readAt: null,
+        },
+        data: { readAt: new Date() },
+      });
+
+      return reply.send({ success: true, markedRead: result.count });
     },
   );
 

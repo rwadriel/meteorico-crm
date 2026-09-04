@@ -27,6 +27,8 @@ interface ConversationSummary {
   lastMessage: ConversationMessage | null;
   messageCount: number;
   awaitingReply: boolean;
+  unreadCount: number;
+  unread: boolean;
   lastInboundAt: string | null;
   serviceWindowOpen: boolean;
   serviceWindowExpiresAt: string | null;
@@ -42,12 +44,12 @@ interface ConversationDetail extends Omit<
 
 interface ConversationListResponse {
   conversations: ConversationSummary[];
-  summary: { total: number; awaitingReply: number };
+  summary: { total: number; awaitingReply: number; unread: number };
 }
 
 export function ConversationsPage() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
-  const [summary, setSummary] = useState({ total: 0, awaitingReply: 0 });
+  const [summary, setSummary] = useState({ total: 0, awaitingReply: 0, unread: 0 });
   const [selectedId, setSelectedId] = useState('');
   const [selected, setSelected] = useState<ConversationDetail | null>(null);
   const [search, setSearch] = useState('');
@@ -104,6 +106,34 @@ export function ConversationsPage() {
       }
     }
   }, []);
+
+  const openConversation = useCallback(async (conversationId: string) => {
+    setSelectedId(conversationId);
+    const wasUnread = conversations.find(
+      (conversation) => conversation.id === conversationId,
+    )?.unread;
+    if (!wasUnread) return;
+
+    setConversations((current) =>
+      current.map((conversation) =>
+        conversation.id === conversationId
+          ? { ...conversation, unread: false, unreadCount: 0 }
+          : conversation,
+      ),
+    );
+    setSummary((current) => ({ ...current, unread: Math.max(0, current.unread - 1) }));
+
+    try {
+      const response = await fetch(`${API}/api/messaging/conversations/${conversationId}/read`, {
+        method: 'PATCH',
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Não foi possível marcar a conversa como lida.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Erro ao marcar conversa como lida.');
+      void loadConversations(true);
+    }
+  }, [conversations, loadConversations]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadConversations(), 250);
@@ -212,6 +242,10 @@ export function ConversationsPage() {
           <span>Aguardando resposta</span>
           <strong>{summary.awaitingReply}</strong>
         </div>
+        <div>
+          <span>Não lidas</span>
+          <strong>{summary.unread}</strong>
+        </div>
       </div>
 
       <section className="inbox-shell" aria-label="Caixa de entrada do WhatsApp">
@@ -242,7 +276,7 @@ export function ConversationsPage() {
                   type="button"
                   className={`inbox-conversation-item ${selectedId === conversation.id ? 'active' : ''}`}
                   key={conversation.id}
-                  onClick={() => setSelectedId(conversation.id)}
+                  onClick={() => void openConversation(conversation.id)}
                 >
                   <span className="inbox-conversation-avatar">
                     {conversation.contact.name.trim().charAt(0).toUpperCase() || '#'}
@@ -257,7 +291,11 @@ export function ConversationsPage() {
                         {conversation.lastMessage?.direction === 'outbound' ? 'Você: ' : ''}
                         {conversation.lastMessage?.content ?? 'Sem mensagens'}
                       </span>
-                      {conversation.awaitingReply && <i aria-label="Aguardando resposta" />}
+                      {conversation.unread && (
+                        <i
+                          aria-label={`${conversation.unreadCount} mensagem(ns) não lida(s)`}
+                        />
+                      )}
                     </span>
                     {conversation.campaign && <small>{conversation.campaign.name}</small>}
                   </span>

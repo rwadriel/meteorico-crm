@@ -270,10 +270,12 @@ describe('Messaging Integration', () => {
       headers: { cookie: sessionCookie },
     });
     expect(listRes.statusCode).toBe(200);
-    expect(listRes.json().summary).toMatchObject({ total: 1, awaitingReply: 1 });
+    expect(listRes.json().summary).toMatchObject({ total: 1, awaitingReply: 1, unread: 1 });
     expect(listRes.json().conversations[0]).toMatchObject({
       id: conversation.id,
       awaitingReply: true,
+      unread: true,
+      unreadCount: 1,
       serviceWindowOpen: true,
       contact: { phone: '5511999990003' },
     });
@@ -286,6 +288,26 @@ describe('Messaging Integration', () => {
     expect(detailRes.statusCode).toBe(200);
     expect(detailRes.json().messages).toHaveLength(1);
     expect(detailRes.json().messages[0].content).toBe('Pode me ajudar?');
+
+    const readRes = await app.inject({
+      method: 'PATCH',
+      url: `/messaging/conversations/${conversation.id}/read`,
+      headers: { cookie: sessionCookie },
+    });
+    expect(readRes.statusCode).toBe(200);
+    expect(readRes.json()).toMatchObject({ success: true, markedRead: 1 });
+
+    const refreshedListRes = await app.inject({
+      method: 'GET',
+      url: '/messaging/conversations',
+      headers: { cookie: sessionCookie },
+    });
+    expect(refreshedListRes.json().summary.unread).toBe(0);
+    expect(refreshedListRes.json().conversations[0]).toMatchObject({
+      unread: false,
+      unreadCount: 0,
+      awaitingReply: true,
+    });
   });
 
   it('handles delivery status webhook', async () => {

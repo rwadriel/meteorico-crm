@@ -32,6 +32,8 @@ describe('ConversationsPage', () => {
       lastMessage: inbound,
       messageCount: 1,
       awaitingReply: true,
+      unreadCount: 1,
+      unread: true,
       lastInboundAt: now,
       serviceWindowOpen: true,
       serviceWindowExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
@@ -39,7 +41,7 @@ describe('ConversationsPage', () => {
 
     const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (init?.method === 'POST') {
+      if (init?.method === 'POST' || init?.method === 'PATCH') {
         return Promise.resolve({
           ok: true,
           status: 202,
@@ -51,7 +53,7 @@ describe('ConversationsPage', () => {
           ok: true,
           json: async () => ({
             conversations: [conversation],
-            summary: { total: 1, awaitingReply: 1 },
+            summary: { total: 1, awaitingReply: 1, unread: 1 },
           }),
         });
       }
@@ -76,7 +78,18 @@ describe('ConversationsPage', () => {
     render(<ConversationsPage />);
 
     expect(await screen.findByText('Tenho uma dúvida')).toBeDefined();
-    expect(screen.getAllByText('+55 (91) 99158-5400')).toHaveLength(3);
+    await waitFor(() => {
+      expect(screen.getAllByText('+55 (91) 99158-5400')).toHaveLength(3);
+    });
+
+    await user.click(screen.getByRole('button', { name: /Tenho uma dúvida/ }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some((call) =>
+        String(call[0]).endsWith('/messaging/conversations/conversation-1/read')
+        && call[1]?.method === 'PATCH',
+      )).toBe(true);
+      expect(screen.getByText('Não lidas').nextElementSibling?.textContent).toBe('0');
+    });
 
     await user.type(screen.getByLabelText('Resposta'), 'Olá! Como posso ajudar?');
     await user.click(screen.getByRole('button', { name: 'Enviar resposta' }));
